@@ -1,0 +1,5 @@
+kivy==2.3.0
+numpy==1.24.3
+deap==1.4.1
+matplotlib==3.7.1
+Pillow==9.5.0
