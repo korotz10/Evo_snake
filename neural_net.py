@@ -1,6 +1,6 @@
 """
 Red neuronal feedforward manual implementada con NumPy.
-Arquitectura: [inputs → 8 neuronas ocultas → 4 salidas]
+Arquitectura: [11 inputs → 8 neuronas ocultas ReLU → 4 salidas Softmax]
 Activación: ReLU en capa oculta, softmax en salida.
 No usa backpropagation, los pesos son optimizados por el GA.
 """
@@ -13,16 +13,16 @@ class NeuralNetwork:
     Red neuronal feedforward simple con 1 capa oculta.
     
     Atributos:
-        input_size: cantidad de neuronas de entrada
-        hidden_size: cantidad de neuronas ocultas
-        output_size: cantidad de neuronas de salida
+        input_size: cantidad de neuronas de entrada (11 con nuevos sensores)
+        hidden_size: cantidad de neuronas ocultas (8)
+        output_size: cantidad de neuronas de salida (4)
         weights_ih: matriz de pesos entrada → oculta
         bias_h: bias de la capa oculta
         weights_ho: matriz de pesos oculta → salida
         bias_o: bias de la capa de salida
     """
     
-    def __init__(self, input_size=15, hidden_size=8, output_size=4):
+    def __init__(self, input_size=11, hidden_size=8, output_size=4):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
@@ -143,16 +143,16 @@ class NeuralNetwork:
         )
     
     @staticmethod
-    def create_from_weights(weights_flat, input_size=12, hidden_size=8, output_size=4):
+    def create_from_weights(weights_flat, input_size=11, hidden_size=8, output_size=4):
         """
         Crea una red neuronal a partir de un vector de pesos.
         Útil para crear individuos en el GA.
         
         Args:
             weights_flat: vector con todos los pesos
-            input_size: cantidad de entradas
-            hidden_size: cantidad de neuronas ocultas
-            output_size: cantidad de salidas
+            input_size: cantidad de entradas (default: 11)
+            hidden_size: cantidad de neuronas ocultas (default: 8)
+            output_size: cantidad de salidas (default: 4)
         
         Returns:
             NeuralNetwork: red neuronal con los pesos establecidos

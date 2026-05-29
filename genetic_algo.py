@@ -1,6 +1,7 @@
 """
 Algoritmo Genético con DEAP para evolucionar los pesos de la red neuronal.
 Los cromosomas son vectores de pesos que se cruzan y mutan.
+Incluye elitismo estricto y guardado de campeones históricos.
 """
 
 import numpy as np
@@ -14,28 +15,35 @@ class SnakeGeneticAlgorithm:
     Evoluciona redes neuronales para jugar Snake usando algoritmo genético.
     
     Atributos:
-        population_size: tamaño de la población (default 50)
-        generations: máximo de generaciones (default 30)
+        population_size: tamaño de la población (default 100)
+        generations: máximo de generaciones (default 50)
         mutation_prob: probabilidad de mutación (default 0.2)
         mutation_sigma: desviación estándar de la mutación (default 0.1)
+        crossover_prob: probabilidad de cruce (default 0.7)
+        tournament_size: tamaño del torneo (default 3)
+        input_size: cantidad de entradas de la red (default 11)
         grid_size: tamaño del grid del juego (default 20)
-        max_steps_per_game: máximo de pasos por partida (default grid_size**2 * 2)
+        champions: dict con mejores individuos cada 10 generaciones
     """
     
     def __init__(self, 
                  population_size=100,
                  generations=50,
                  mutation_prob=0.2,
-                 mutation_sigma=0.2,
+                 mutation_sigma=0.1,
+                 crossover_prob=0.7,
+                 tournament_size=3,
                  grid_size=20):
         self.population_size = population_size
         self.generations = generations
         self.mutation_prob = mutation_prob
         self.mutation_sigma = mutation_sigma
+        self.crossover_prob = crossover_prob
+        self.tournament_size = tournament_size
         self.grid_size = grid_size
         
         # Configuración de la red neuronal
-        self.input_size = 15
+        self.input_size = 11  # 11 sensores nuevos
         self.hidden_size = 8
         self.output_size = 4
         
@@ -50,6 +58,7 @@ class SnakeGeneticAlgorithm:
         self.history = []
         self.best_individual = None
         self.best_fitness = 0
+        self.champions = {}  # Dict con campeones históricos: {gen: individual}
     
     def _setup_deap(self):
         """Configura los tipos y operadores genéticos de DEAP."""
@@ -89,7 +98,7 @@ class SnakeGeneticAlgorithm:
         # Operadores genéticos
         self.toolbox.register("mate", self._crossover_onepoint)
         self.toolbox.register("mutate", self._mutate_gaussian)
-        self.toolbox.register("select", tools.selTournament, tournsize=3)
+        self.toolbox.register("select", tools.selTournament, tournsize=self.tournament_size)
     
     def evaluate(self, individual):
         """
@@ -174,7 +183,12 @@ class SnakeGeneticAlgorithm:
     
     def evolve(self, callback=None):
         """
-        Ejecuta el algoritmo genético.
+        Ejecuta el algoritmo genético con elitismo estricto.
+        
+        Elitismo: Los 2 mejores individuos pasan directamente a la siguiente
+        generación sin mutación ni cruce.
+        
+        Campeones: Se guardan los mejores individuos cada 10 generaciones.
         
         Args:
             callback: función para llamar después de cada generación
@@ -193,32 +207,10 @@ class SnakeGeneticAlgorithm:
             ind.fitness.values = fit
         
         self.history = []
+        self.champions = {}
         
         for gen in range(self.generations):
-            # Seleccionar los mejores
-            offspring = self.toolbox.select(population, len(population))
-            offspring = [self.toolbox.clone(ind) for ind in offspring]
-            
-            # Aplicar cruce
-            for i in range(1, len(offspring), 2):
-                if np.random.random() < 0.8:  # Probabilidad de cruce 80%
-                    self.toolbox.mate(offspring[i-1], offspring[i])
-            
-            # Aplicar mutación
-            for i in range(len(offspring)):
-                if np.random.random() < 0.3:  # Probabilidad de mutación 30%
-                    self.toolbox.mutate(offspring[i])
-            
-            # Evaluar individuos con fitness inválido
-            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = map(self.toolbox.evaluate, invalid_ind)
-            for ind, fit in zip(invalid_ind, fitnesses):
-                ind.fitness.values = fit
-            
-            # Reemplazar población
-            population[:] = offspring
-            
-            # Obtener estadísticas
+            # Obtener estadísticas de la generación actual
             fits = [ind.fitness.values[0] for ind in population]
             best_fit = max(fits)
             mean_fit = np.mean(fits)
@@ -227,6 +219,12 @@ class SnakeGeneticAlgorithm:
             if best_fit > self.best_fitness:
                 self.best_fitness = best_fit
                 self.best_individual = max(population, key=lambda x: x.fitness.values[0])
+            
+            # Guardar campeón cada 10 generaciones
+            if gen % 10 == 0:
+                self.champions[gen] = self.toolbox.clone(
+                    max(population, key=lambda x: x.fitness.values[0])
+                )
             
             self.history.append({
                 'generation': gen,
@@ -243,8 +241,72 @@ class SnakeGeneticAlgorithm:
                     'min': min(fits),
                     'max': max(fits)
                 })
+            
+            # ELITISMO ESTRICTO: Clonar los 2 mejores sin mutación ni cruce
+            elite = sorted(population, key=lambda x: x.fitness.values[0], reverse=True)[:2]
+            offspring = [self.toolbox.clone(ind) for ind in elite]
+            
+            # Completar el resto de la población con selección + cruce + mutación
+            while len(offspring) < self.population_size:
+                # Seleccionar parejas
+                parent1 = self.toolbox.select(population, 1)[0]
+                parent2 = self.toolbox.select(population, 1)[0]
+                
+                # Clonar
+                child1 = self.toolbox.clone(parent1)
+                child2 = self.toolbox.clone(parent2)
+                
+                # Aplicar cruce con probabilidad crossover_prob
+                if np.random.random() < self.crossover_prob:
+                    self.toolbox.mate(child1, child2)
+                
+                # Aplicar mutación con probabilidad mutation_prob
+                if np.random.random() < self.mutation_prob:
+                    self.toolbox.mutate(child1)
+                if np.random.random() < self.mutation_prob:
+                    self.toolbox.mutate(child2)
+                
+                # Añadir a offspring
+                offspring.append(child1)
+                if len(offspring) < self.population_size:
+                    offspring.append(child2)
+            
+            # Recortar offspring al tamaño de población
+            offspring = offspring[:self.population_size]
+            
+            # Evaluar individuos con fitness inválido
+            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+            fitnesses = map(self.toolbox.evaluate, invalid_ind)
+            for ind, fit in zip(invalid_ind, fitnesses):
+                ind.fitness.values = fit
+            
+            # Reemplazar población
+            population[:] = offspring
         
         return self.best_individual, self.history
+    
+    def get_champion(self, generation):
+        """
+        Retorna el campeón (mejor individuo) de una generación guardada.
+        
+        Los campeones se guardan cada 10 generaciones (0, 10, 20, ..., 50).
+        
+        Args:
+            generation: número de generación (debe ser múltiplo de 10)
+        
+        Returns:
+            NeuralNetwork: red neuronal del campeón, o None si no existe
+        """
+        if generation not in self.champions:
+            return None
+        
+        champion = self.champions[generation]
+        return NeuralNetwork.create_from_weights(
+            np.array(champion),
+            self.input_size,
+            self.hidden_size,
+            self.output_size
+        )
     
     def get_best_network(self):
         """

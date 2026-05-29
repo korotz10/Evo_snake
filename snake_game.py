@@ -1,6 +1,6 @@
 """
-Motor del juego Snake.
-Gestiona el grid, movimiento de la serpiente, colisiones y comida.
+Motor del juego Snake con sistema de energía.
+Gestiona grid, movimiento de serpiente, colisiones, comida y energía.
 """
 
 import numpy as np
@@ -18,7 +18,7 @@ class Direction(Enum):
 
 class SnakeGame:
     """
-    Juego Snake en un grid.
+    Juego Snake en un grid con sistema de energía.
     
     Atributos:
         grid_size: tamaño del grid (grid_size x grid_size)
@@ -28,6 +28,7 @@ class SnakeGame:
         next_direction: dirección para el siguiente movimiento
         steps: cantidad de pasos dados
         food_eaten: cantidad de comida comida
+        energy: energía actual del snake
         game_over: si el juego terminó
     """
     
@@ -36,7 +37,7 @@ class SnakeGame:
         self.reset()
     
     def reset(self):
-        """Reinicia el juego."""
+        """Reinicia el juego con sistema de energía."""
         # Snake comienza en el centro, apuntando a la derecha
         center = self.grid_size // 2
         self.snake = deque([(center - 2, center), (center - 1, center), (center, center)])
@@ -44,9 +45,10 @@ class SnakeGame:
         self.next_direction = Direction.RIGHT
         self.steps = 0
         self.food_eaten = 0
-        self.steps_since_last_food = 0  # Contador de pasos sin comer
+        self.energy = 200  # Energía inicial
+        self.max_energy = 400  # Energía máxima
         self.game_over = False
-        self.max_steps_without_food = (self.grid_size * self.grid_size) // 2  # Max pasos sin comer
+        self.death_reason = None  # Razón de fin de juego
         
         # Generar comida en posición aleatoria
         self.food = self._generate_food()
@@ -75,13 +77,14 @@ class SnakeGame:
     
     def step(self):
         """
-        Realiza un paso del juego.
+        Realiza un paso del juego con sistema de energía.
         Retorna True si el juego continúa, False si terminó.
         """
         if self.game_over:
             return False
         
         self.steps += 1
+        self.energy -= 1  # Cada movimiento cuesta 1 energía
         self.direction = self.next_direction
         
         # Calcular nueva posición de la cabeza
@@ -92,29 +95,32 @@ class SnakeGame:
         # Verificar colisión con paredes
         if not (0 <= new_head[0] < self.grid_size and 0 <= new_head[1] < self.grid_size):
             self.game_over = True
+            self.death_reason = "pared"
             return False
         
         # Verificar colisión con cuerpo
         if new_head in self.snake:
             self.game_over = True
+            self.death_reason = "cuerpo"
             return False
         
         # Mover snake
         self.snake.append(new_head)
-        self.steps_since_last_food += 1
         
         # Verificar si comió comida
         if new_head == self.food:
             self.food_eaten += 1
-            self.steps_since_last_food = 0  # Resetear contador
+            # Añadir 100 de energía, con tope de max_energy
+            self.energy = min(self.energy + 100, self.max_energy)
             self.food = self._generate_food()
         else:
             # Si no comió, remover la cola para mantener el tamaño
             self.snake.popleft()
         
-        # Verificar límite de pasos sin comer (penalizar inactividad)
-        if self.steps_since_last_food >= self.max_steps_without_food:
+        # Verificar si se agotó la energía
+        if self.energy <= 0:
             self.game_over = True
+            self.death_reason = "energia"
             return False
         
         return True
@@ -151,24 +157,25 @@ class SnakeGame:
     
     def calculate_fitness(self):
         """
-        Calcula el fitness del individuo mejorado.
-        Fitness = comida*500 - inactividad*0.1 + bonus_cercanía
+        Calcula el fitness con bonus de cercanía a la comida.
+        
+        Fitness = (comida_comidas * 1000) + pasos_sobrevividos + bonus_cercanía
+        
+        Bonus de cercanía = max(0, 100 - distancia_manhattan * 5)
+        Premia acercarse a la comida aunque no la coma.
         """
-        # Componente principal: comida comida (muy importante)
-        fitness = self.food_eaten * 500
+        # Base: comida comida * 1000 + pasos sobrevividos
+        base_fitness = self.food_eaten * 1000 + self.steps
         
-        # Penalidad por pasos sin comer (desalienta quedarse quieto)
-        fitness -= self.steps_since_last_food * 0.1
-        
-        # Bonus por cercanía a la comida (incluso si no la come)
-        food_x, food_y = self.food
+        # Bonus por cercanía a la comida
         head_x, head_y = self.get_head()
+        food_x, food_y = self.food
         manhattan_dist = abs(food_x - head_x) + abs(food_y - head_y)
-        max_manhattan = 2 * self.grid_size
-        proximity_bonus = (max_manhattan - manhattan_dist) / max_manhattan * 10
-        fitness += proximity_bonus
+        proximity_bonus = max(0, 100 - manhattan_dist * 5)
         
-        return fitness
+        total_fitness = base_fitness + proximity_bonus
+        
+        return total_fitness
     
     def _get_next_position(self, direction):
         """Retorna la posición siguiente en una dirección dada."""
@@ -211,59 +218,54 @@ class SnakeGame:
     
     def get_sensors(self):
         """
-        Retorna un vector de sensores para la red neuronal.
+        Retorna un vector de 11 sensores para la red neuronal.
         
-        Sensores:
-        - Distancia a pared (UP, DOWN, LEFT, RIGHT): 4 valores
-        - Dirección a comida (X, Y normalizados): 2 valores
-        - Distancia Manhattan a comida: 1 valor
-        - Dirección actual (one-hot encoding): 4 valores
-        - Peligro inmediato (adelante, izq relativa, der relativa): 3 valores binarios
-        Total: 15 entradas
+        Sensores (11 entradas):
+        1-3: Peligro relativo a orientación actual (izquierda, frente, derecha) - binario
+        4-7: Dirección actual en one-hot (N, S, E, O)
+        8-11: Posición relativa de comida en binario (¿está al N?, ¿S?, ¿E?, ¿O?)
+        
+        Returns:
+            np.array de 11 valores flotantes en rango [0, 1]
         """
         head_x, head_y = self.get_head()
         food_x, food_y = self.food
         
-        # Distancias normalizadas a paredes (0 a 1)
-        dist_up = head_y / self.grid_size
-        dist_down = (self.grid_size - 1 - head_y) / self.grid_size
-        dist_left = head_x / self.grid_size
-        dist_right = (self.grid_size - 1 - head_x) / self.grid_size
-        
-        # Dirección a la comida (normalizada)
-        food_dir_x = (food_x - head_x) / self.grid_size
-        food_dir_y = (food_y - head_y) / self.grid_size
-        
-        # Distancia Manhattan normalizada a comida
-        manhattan_dist = (abs(food_x - head_x) + abs(food_y - head_y)) / (2 * self.grid_size)
-        
-        # Dirección actual (one-hot)
-        dir_up = 1 if self.direction == Direction.UP else 0
-        dir_down = 1 if self.direction == Direction.DOWN else 0
-        dir_left = 1 if self.direction == Direction.LEFT else 0
-        dir_right = 1 if self.direction == Direction.RIGHT else 0
-        
-        # Sensores de peligro inmediato (3 binarios)
-        # Adelante: peligro en la dirección actual
-        next_pos = self._get_next_position(self.direction)
-        danger_ahead = 0 if self._is_safe(next_pos) else 1
-        
-        # Izquierda relativa (90 grados a la izquierda de la dirección actual)
+        # SENSORES 1-3: Peligro relativo a la orientación actual (binario)
+        # Izquierda relativa (90 grados a la izquierda)
         left_direction = self._turn_left(self.direction)
         left_pos = self._get_next_position(left_direction)
-        danger_left = 0 if self._is_safe(left_pos) else 1
+        danger_left = 0.0 if self._is_safe(left_pos) else 1.0
         
-        # Derecha relativa (90 grados a la derecha de la dirección actual)
+        # Frente (dirección actual)
+        front_pos = self._get_next_position(self.direction)
+        danger_front = 0.0 if self._is_safe(front_pos) else 1.0
+        
+        # Derecha relativa (90 grados a la derecha)
         right_direction = self._turn_right(self.direction)
         right_pos = self._get_next_position(right_direction)
-        danger_right = 0 if self._is_safe(right_pos) else 1
+        danger_right = 0.0 if self._is_safe(right_pos) else 1.0
+        
+        # SENSORES 4-7: Dirección actual en one-hot
+        dir_north = 1.0 if self.direction == Direction.UP else 0.0
+        dir_south = 1.0 if self.direction == Direction.DOWN else 0.0
+        dir_east = 1.0 if self.direction == Direction.RIGHT else 0.0
+        dir_west = 1.0 if self.direction == Direction.LEFT else 0.0
+        
+        # SENSORES 8-11: Posición relativa de comida (binario)
+        # ¿Está la comida al norte? (comida_y < cabeza_y)
+        food_north = 1.0 if food_y < head_y else 0.0
+        # ¿Está la comida al sur? (comida_y > cabeza_y)
+        food_south = 1.0 if food_y > head_y else 0.0
+        # ¿Está la comida al este? (comida_x > cabeza_x)
+        food_east = 1.0 if food_x > head_x else 0.0
+        # ¿Está la comida al oeste? (comida_x < cabeza_x)
+        food_west = 1.0 if food_x < head_x else 0.0
         
         sensors = np.array([
-            dist_up, dist_down, dist_left, dist_right,
-            food_dir_x, food_dir_y, manhattan_dist,
-            dir_up, dir_down, dir_left, dir_right,
-            self.food_eaten / 10.0,  # Comida comida normalizada
-            danger_ahead, danger_left, danger_right  # 3 sensores de peligro inmediato
+            danger_left, danger_front, danger_right,      # 3 sensores de peligro relativo
+            dir_north, dir_south, dir_east, dir_west,      # 4 dirección actual one-hot
+            food_north, food_south, food_east, food_west   # 4 posición relativa de comida
         ], dtype=np.float32)
         
         return sensors

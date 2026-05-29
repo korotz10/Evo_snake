@@ -1,6 +1,7 @@
 """
 Aplicación Kivy para EvoSnake.
 Interfaz gráfica con navegación entre pantallas y threading para entrenamiento.
+Nuevo: FitnessCanvasWidget (sin matplotlib), Slider de velocidad, Spinner de campeones.
 """
 
 import threading
@@ -15,14 +16,15 @@ from kivy.uix.button import Button
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
-from kivy.garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg
+from kivy.uix.slider import Slider
+from kivy.uix.spinner import Spinner
 from kivy.clock import Clock
 from kivy.uix.popup import Popup
 
 from snake_game import SnakeGame, Direction
 from neural_net import NeuralNetwork
 from genetic_algo import SnakeGeneticAlgorithm
-from visualizer import FitnessVisualizer, GameVisualizer
+from visualizer import FitnessCanvasWidget, GameVisualizer
 
 
 class MenuScreen(Screen):
@@ -89,20 +91,21 @@ class MenuScreen(Screen):
 
 
 class TrainingScreen(Screen):
-    """Pantalla de entrenamiento con progreso en tiempo real."""
+    """Pantalla de entrenamiento con progreso en tiempo real y control de velocidad."""
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.name = 'training'
         self.training_thread = None
         self.is_training = False
+        self.training_speed_delay = 0.0  # Segundos de espera entre generaciones
         
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
         # Información
         self.lbl_generation = Label(
             text='Generación: 0',
-            size_hint_y=0.1,
+            size_hint_y=0.08,
             font_size='16sp',
             bold=True
         )
@@ -110,7 +113,7 @@ class TrainingScreen(Screen):
         
         self.lbl_fitness = Label(
             text='Mejor fitness: 0',
-            size_hint_y=0.1,
+            size_hint_y=0.08,
             font_size='14sp'
         )
         layout.add_widget(self.lbl_fitness)
@@ -119,16 +122,29 @@ class TrainingScreen(Screen):
         self.progress_bar = ProgressBar(
             max=50,
             value=0,
-            size_hint_y=0.1
+            size_hint_y=0.08
         )
         layout.add_widget(self.progress_bar)
         
-        # Gráfica de fitness
-        self.plot_container = BoxLayout(size_hint_y=0.6)
-        layout.add_widget(self.plot_container)
+        # Control de velocidad del entrenamiento
+        speed_layout = BoxLayout(orientation='horizontal', size_hint_y=0.08, spacing=10)
+        speed_layout.add_widget(Label(text='Velocidad:', size_hint_x=0.15))
+        
+        self.speed_slider = Slider(min=0, max=0.5, value=0.0, size_hint_x=0.65)
+        self.speed_slider.bind(value=self.on_speed_changed)
+        speed_layout.add_widget(self.speed_slider)
+        
+        self.lbl_speed = Label(text='0.0s', size_hint_x=0.2, font_size='12sp')
+        speed_layout.add_widget(self.lbl_speed)
+        
+        layout.add_widget(speed_layout)
+        
+        # Gráfica de fitness (usando Canvas nativo)
+        self.fitness_canvas = FitnessCanvasWidget(size_hint_y=0.55)
+        layout.add_widget(self.fitness_canvas)
         
         # Botones
-        btn_layout = GridLayout(cols=2, spacing=10, size_hint_y=0.1)
+        btn_layout = GridLayout(cols=2, spacing=10, size_hint_y=0.08)
         
         self.btn_start = Button(text='Iniciar Entrenamiento', font_size='14sp')
         self.btn_start.bind(on_press=self.start_training)
@@ -141,6 +157,11 @@ class TrainingScreen(Screen):
         layout.add_widget(btn_layout)
         
         self.add_widget(layout)
+    
+    def on_speed_changed(self, instance, value):
+        """Actualiza la etiqueta de velocidad cuando cambia el slider."""
+        self.training_speed_delay = value
+        self.lbl_speed.text = f'{value:.2f}s'
     
     def start_training(self, instance):
         if not self.is_training:
@@ -161,12 +182,17 @@ class TrainingScreen(Screen):
                 population_size=100,
                 generations=50,
                 mutation_prob=0.2,
-                mutation_sigma=0.2,
+                mutation_sigma=0.1,
+                crossover_prob=0.7,
+                tournament_size=3,
                 grid_size=20
             )
             
             # Función callback para actualizar UI
             def update_callback(gen, best_fit, stats):
+                # Esperar según la velocidad configurada en el slider
+                time.sleep(self.training_speed_delay)
+                
                 history = ga.get_history()
                 Clock.schedule_once(
                     lambda dt, g=gen, bf=best_fit, h=history: self.update_progress(g, bf, h),
@@ -176,9 +202,10 @@ class TrainingScreen(Screen):
             # Ejecutar evolución
             best_ind, history = ga.evolve(callback=update_callback)
             
-            # Guardar mejor red
+            # Guardar mejor red y campeones
             app.best_network = ga.get_best_network()
             app.training_history = history
+            app.champions = ga.champions  # Guardar dict de campeones
             
             # Mostrar notificación
             Clock.schedule_once(
@@ -189,6 +216,8 @@ class TrainingScreen(Screen):
         except Exception as e:
             error_msg = str(e)
             print(f"Error durante entrenamiento: {error_msg}")
+            import traceback
+            traceback.print_exc()
             Clock.schedule_once(
                 lambda dt, msg=error_msg: self.on_training_error(msg),
                 0
@@ -200,12 +229,8 @@ class TrainingScreen(Screen):
         self.lbl_fitness.text = f'Mejor fitness: {best_fitness:.0f}'
         self.progress_bar.value = generation + 1
         
-        # Actualizar gráfica
-        visualizer = FitnessVisualizer()
-        canvas = visualizer.update_plot(history)
-        
-        self.plot_container.clear_widgets()
-        self.plot_container.add_widget(canvas)
+        # Actualizar gráfica con el nuevo historial
+        self.fitness_canvas.update(history)
     
     def on_training_complete(self):
         """Se llama cuando el entrenamiento termina."""
@@ -224,7 +249,7 @@ class TrainingScreen(Screen):
 
 
 class GameScreen(Screen):
-    """Pantalla donde el mejor snake juega automáticamente."""
+    """Pantalla donde el mejor snake (o un campeón) juega automáticamente."""
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -233,29 +258,47 @@ class GameScreen(Screen):
         self.is_running = False
         self.current_game = None
         self.game_speed = 0.1  # segundos por step
+        self.selected_champion_generation = None  # Generación del campeón seleccionado
         
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
+        # Selector de campeones (Spinner)
+        spinner_layout = BoxLayout(orientation='horizontal', size_hint_y=0.08, spacing=10)
+        spinner_layout.add_widget(Label(text='Selecciona campeón:', size_hint_x=0.3))
+        
+        self.champion_spinner = Spinner(
+            text='Mejor (Gen 50)',
+            values=('Mejor (Gen 50)', 'Gen 0', 'Gen 10', 'Gen 20', 'Gen 30', 'Gen 40'),
+            size_hint_x=0.7
+        )
+        self.champion_spinner.bind(text=self.on_champion_selected)
+        spinner_layout.add_widget(self.champion_spinner)
+        
+        layout.add_widget(spinner_layout)
+        
         # Canvas del juego
-        self.game_canvas = Image()
+        self.game_canvas = Image(size_hint_y=0.75)
         layout.add_widget(self.game_canvas)
         
         # Información del juego
-        info_layout = GridLayout(cols=3, spacing=10, size_hint_y=0.15)
+        info_layout = GridLayout(cols=4, spacing=10, size_hint_y=0.08)
         
-        self.lbl_food = Label(text='Comida: 0', font_size='14sp')
+        self.lbl_food = Label(text='Comida: 0', font_size='12sp')
         info_layout.add_widget(self.lbl_food)
         
-        self.lbl_steps = Label(text='Pasos: 0', font_size='14sp')
+        self.lbl_steps = Label(text='Pasos: 0', font_size='12sp')
         info_layout.add_widget(self.lbl_steps)
         
-        self.lbl_fitness = Label(text='Fitness: 0', font_size='14sp')
+        self.lbl_energy = Label(text='Energía: 200', font_size='12sp')
+        info_layout.add_widget(self.lbl_energy)
+        
+        self.lbl_fitness = Label(text='Fitness: 0', font_size='12sp')
         info_layout.add_widget(self.lbl_fitness)
         
         layout.add_widget(info_layout)
         
         # Botones
-        btn_layout = GridLayout(cols=3, spacing=10, size_hint_y=0.1)
+        btn_layout = GridLayout(cols=3, spacing=10, size_hint_y=0.08)
         
         self.btn_play = Button(text='Play', font_size='12sp')
         self.btn_play.bind(on_press=self.toggle_play)
@@ -273,8 +316,38 @@ class GameScreen(Screen):
         
         self.add_widget(layout)
     
+    def on_champion_selected(self, spinner, text):
+        """Se llama cuando se selecciona un campeón del spinner."""
+        # Mapear texto del spinner a generación
+        generation_map = {
+            'Mejor (Gen 50)': None,  # Mejor del entrenamiento
+            'Gen 0': 0,
+            'Gen 10': 10,
+            'Gen 20': 20,
+            'Gen 30': 30,
+            'Gen 40': 40
+        }
+        self.selected_champion_generation = generation_map.get(text)
+        
+        # Reiniciar el juego con el nuevo campeón
+        if not self.is_running:
+            self.reset_game(None)
+    
     def on_enter(self):
         """Se llama cuando la pantalla se hace visible."""
+        # Actualizar opciones del spinner si hay champions disponibles
+        app = App.get_running_app()
+        if app.champions:
+            champion_generations = sorted(app.champions.keys())
+            spinner_options = ['Mejor (Gen 50)']
+            for gen in champion_generations:
+                if gen > 0:  # Excluir generación 0 si está
+                    spinner_options.append(f'Gen {gen}')
+            
+            # Agregar opciones del spinner
+            if len(spinner_options) > 1:
+                self.champion_spinner.values = tuple(spinner_options)
+        
         self.reset_game(None)
         self.toggle_play(None)
     
@@ -300,12 +373,31 @@ class GameScreen(Screen):
         """Ejecuta el juego en un thread separado."""
         app = App.get_running_app()
         
+        # Obtener la red neuronal a usar (campeón o mejor)
+        if self.selected_champion_generation is not None and app.champions:
+            network = app.champions.get(self.selected_champion_generation)
+            if network is not None:
+                network = NeuralNetwork.create_from_weights(
+                    np.array(network),
+                    input_size=11,
+                    hidden_size=8,
+                    output_size=4
+                )
+            else:
+                network = app.best_network
+        else:
+            network = app.best_network
+        
+        if network is None:
+            self.is_running = False
+            return
+        
         while self.is_running and not self.current_game.game_over:
             # Obtener sensores del juego
             sensors = self.current_game.get_sensors()
             
             # Red neuronal predice la dirección
-            output = app.best_network.predict(sensors)[0]
+            output = network.predict(sensors)[0]
             
             # Convertir índice a dirección
             directions = [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT]
@@ -333,34 +425,17 @@ class GameScreen(Screen):
             # Actualizar información
             self.lbl_food.text = f'Comida: {self.current_game.food_eaten}'
             self.lbl_steps.text = f'Pasos: {self.current_game.steps}'
-            self.lbl_fitness.text = f'Fitness: {self.current_game.calculate_fitness()}'
+            self.lbl_energy.text = f'Energía: {self.current_game.energy}'
+            self.lbl_fitness.text = f'Fitness: {self.current_game.calculate_fitness():.0f}'
             
-            # Obtener frame del juego (escalado para visualización)
-            frame = GameVisualizer.get_game_frame(self.current_game)
+            # Obtener frame del juego (ya incluye borde en visualizer.py)
+            frame = GameVisualizer.get_game_frame(self.current_game, cell_size=10)
             
-            # Escalar para mejor visualización (20x20 -> 400x400)
-            frame_scaled = np.repeat(np.repeat(frame, 10, axis=0), 10, axis=1)
-            
-            # Convertir a formato PNG para Kivy
-            import tempfile
-            from PIL import Image as PILImage
-            
-            pil_image = PILImage.fromarray(frame_scaled)
-            
-            # Usar tempfile para crear archivo temporal en el directorio correcto
-            if not hasattr(self, '_temp_file'):
-                self._temp_file = tempfile.NamedTemporaryFile(
-                    suffix='.png', 
-                    delete=False
-                )
-                self._temp_path = self._temp_file.name
-                self._temp_file.close()
-            
-            # Guardar imagen en archivo temporal
-            pil_image.save(self._temp_path)
+            # Convertir a formato Kivy Image
+            temp_path = GameVisualizer.save_frame_as_kivy_image(frame)
             
             # Actualizar imagen en Kivy
-            self.game_canvas.source = self._temp_path
+            self.game_canvas.source = temp_path
             self.game_canvas.reload()
     
     def go_to_menu(self, instance):
@@ -386,9 +461,9 @@ class ResultsScreen(Screen):
         )
         layout.add_widget(title)
         
-        # Gráfica de resumen
-        self.plot_container = BoxLayout(size_hint_y=0.7)
-        layout.add_widget(self.plot_container)
+        # Gráfica de resumen usando Canvas
+        self.fitness_canvas = FitnessCanvasWidget(size_hint_y=0.7)
+        layout.add_widget(self.fitness_canvas)
         
         # Botones
         btn_layout = GridLayout(cols=2, spacing=10, size_hint_y=0.1)
@@ -409,11 +484,7 @@ class ResultsScreen(Screen):
         """Se llama cuando la pantalla se hace visible."""
         app = App.get_running_app()
         if app.training_history:
-            visualizer = FitnessVisualizer()
-            canvas = visualizer.create_summary_plot(app.training_history)
-            
-            self.plot_container.clear_widgets()
-            self.plot_container.add_widget(canvas)
+            self.fitness_canvas.update(app.training_history)
     
     def go_to_menu(self, instance):
         self.manager.current = 'menu'
@@ -429,6 +500,7 @@ class EvoSnakeApp(App):
         super().__init__(**kwargs)
         self.best_network = None
         self.training_history = None
+        self.champions = {}  # Dict con campeones por generación
     
     def build(self):
         """Construye la interfaz principal."""

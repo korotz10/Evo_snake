@@ -1,207 +1,275 @@
 """
-Visualizador de gráficas de fitness usando matplotlib embebido en Kivy.
-Muestra en tiempo real la evolución del fitness durante el entrenamiento.
+Visualizadores para EvoSnake usando Kivy Canvas (sin matplotlib).
+FitnessCanvasWidget: gráfica de fitness en tiempo real.
+GameVisualizer: renderizado del juego a RGB.
 """
 
 import numpy as np
-from kivy.garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg
-from kivy.uix.boxlayout import BoxLayout
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')  # Backend sin GUI
+from kivy.uix.widget import Widget
+from kivy.graphics import Line, Rectangle, Color
+from kivy.uix.label import Label
+from kivy.graphics.texture import Texture
+from kivy.uix.image import Image
+from io import BytesIO
+from PIL import Image as PILImage
 
 
-class FitnessVisualizer:
+class FitnessCanvasWidget(Widget):
     """
-    Crea visualizaciones del progreso de fitness durante el entrenamiento.
+    Widget que dibuja la gráfica de fitness usando Canvas nativo de Kivy.
+    
+    Muestra en tiempo real:
+    - Línea verde: mejor fitness de cada generación
+    - Línea azul: fitness promedio de cada generación
+    - Fondo oscuro con grid de referencia
+    - Etiquetas con generación actual y fitness máximo
     """
     
-    def __init__(self):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.history = []
-        self.canvas = None
-        self.fig = None
-        self.ax = None
+        self.padding_x = 60  # Espacio para eje Y
+        self.padding_y = 60  # Espacio para eje X
+        self.margin = 20     # Margen general
+        self.grid_lines = 5  # Número de líneas de grid
+        
+        # Bind canvas update
+        self.bind(size=self.update_canvas)
     
-    def update_plot(self, history):
+    def update(self, history):
         """
         Actualiza la gráfica con el historial de fitness.
         
         Args:
-            history: lista de dicts con 'generation', 'best_fitness', 'mean_fitness'
-        
-        Returns:
-            FigureCanvasKivyAgg: widget de Kivy con la gráfica
+            history: lista de dicts con 'best_fitness' y 'mean_fitness'
         """
         self.history = history
+        self.update_canvas()
+    
+    def update_canvas(self, *args):
+        """Redibuja el canvas con la gráfica actualizada."""
+        self.canvas.clear()
         
-        # Crear figura si no existe
-        if self.fig is None:
-            self.fig, self.ax = plt.subplots(figsize=(8, 5))
-        else:
-            self.ax.clear()
+        if not self.history or len(self.history) < 2:
+            self._draw_empty_state()
+            return
+        
+        # Calcular dimensiones
+        plot_width = self.width - self.padding_x - self.margin
+        plot_height = self.height - self.padding_y - self.margin
+        plot_x = self.margin + self.padding_x
+        plot_y = self.margin
         
         # Extraer datos
-        generations = [h['generation'] for h in history]
-        best_fitness = [h['best_fitness'] for h in history]
-        mean_fitness = [h['mean_fitness'] for h in history]
+        generations = [h['generation'] for h in self.history]
+        best_fitness = [h['best_fitness'] for h in self.history]
+        mean_fitness = [h['mean_fitness'] for h in self.history]
         
-        # Graficar
-        self.ax.plot(generations, best_fitness, 'g-', linewidth=2, label='Mejor fitness')
-        self.ax.plot(generations, mean_fitness, 'b--', linewidth=1.5, label='Fitness promedio')
-        self.ax.fill_between(generations, best_fitness, mean_fitness, alpha=0.2, color='green')
+        # Encontrar rango de valores
+        max_fitness = max(max(best_fitness), max(mean_fitness)) if best_fitness else 1
+        min_fitness = min(min(best_fitness), min(mean_fitness)) if best_fitness else 0
+        range_fitness = max_fitness - min_fitness if max_fitness > min_fitness else 1
         
-        # Etiquetas y formato
-        self.ax.set_xlabel('Generación', fontsize=12, fontweight='bold')
-        self.ax.set_ylabel('Fitness', fontsize=12, fontweight='bold')
-        self.ax.set_title('Evolución del Fitness - EvoSnake', fontsize=14, fontweight='bold')
-        self.ax.legend(loc='upper left', fontsize=10)
-        self.ax.grid(True, alpha=0.3)
+        max_gen = max(generations) if generations else 1
         
-        # Ajustar layout
-        plt.tight_layout()
+        # Dibujar fondo
+        with self.canvas:
+            # Fondo oscuro
+            Color(0.15, 0.15, 0.15, 1)
+            Rectangle(pos=(plot_x, plot_y), size=(plot_width, plot_height))
         
-        # Convertir a widget Kivy
-        self.canvas = FigureCanvasKivyAgg(self.fig)
-        return self.canvas
+        # Dibujar grid
+        self._draw_grid(plot_x, plot_y, plot_width, plot_height, 
+                       max_gen, max_fitness, min_fitness)
+        
+        # Dibujar líneas de fitness
+        self._draw_fitness_lines(plot_x, plot_y, plot_width, plot_height,
+                                generations, best_fitness, mean_fitness,
+                                max_gen, max_fitness, min_fitness)
+        
+        # Dibujar ejes
+        self._draw_axes(plot_x, plot_y, plot_width, plot_height,
+                       max_gen, max_fitness, min_fitness)
+        
+        # Añadir etiquetas
+        self._draw_labels(plot_x, plot_y, plot_width, plot_height,
+                         best_fitness[-1] if best_fitness else 0,
+                         generations[-1] if generations else 0)
     
-    def create_summary_plot(self, history):
-        """
-        Crea una gráfica de resumen con más detalles.
-        
-        Args:
-            history: historial de fitness
-        
-        Returns:
-            FigureCanvasKivyAgg: widget de Kivy con la gráfica
-        """
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        
-        # Extraer datos
-        generations = [h['generation'] for h in history]
-        best_fitness = [h['best_fitness'] for h in history]
-        mean_fitness = [h['mean_fitness'] for h in history]
-        min_fitness = [h['min_fitness'] for h in history]
-        max_fitness = [h['max_fitness'] for h in history]
-        
-        # Plot 1: Fitness por generación
-        axes[0, 0].plot(generations, best_fitness, 'g-', linewidth=2, label='Mejor')
-        axes[0, 0].plot(generations, mean_fitness, 'b--', linewidth=1.5, label='Promedio')
-        axes[0, 0].set_title('Fitness por Generación', fontweight='bold')
-        axes[0, 0].set_xlabel('Generación')
-        axes[0, 0].set_ylabel('Fitness')
-        axes[0, 0].legend()
-        axes[0, 0].grid(True, alpha=0.3)
-        
-        # Plot 2: Rango de fitness (min-max)
-        axes[0, 1].fill_between(generations, min_fitness, max_fitness, alpha=0.3, color='purple')
-        axes[0, 1].plot(generations, min_fitness, 'r-', linewidth=1, label='Mínimo')
-        axes[0, 1].plot(generations, max_fitness, 'g-', linewidth=1, label='Máximo')
-        axes[0, 1].set_title('Rango de Fitness', fontweight='bold')
-        axes[0, 1].set_xlabel('Generación')
-        axes[0, 1].set_ylabel('Fitness')
-        axes[0, 1].legend()
-        axes[0, 1].grid(True, alpha=0.3)
-        
-        # Plot 3: Mejora progresiva
-        improvement = np.array(best_fitness) - np.array(best_fitness[0])
-        axes[1, 0].plot(generations, improvement, 'orange', linewidth=2)
-        axes[1, 0].fill_between(generations, 0, improvement, alpha=0.2, color='orange')
-        axes[1, 0].set_title('Mejora desde Generación 0', fontweight='bold')
-        axes[1, 0].set_xlabel('Generación')
-        axes[1, 0].set_ylabel('Mejora de Fitness')
-        axes[1, 0].grid(True, alpha=0.3)
-        
-        # Plot 4: Estadísticas finales
-        axes[1, 1].axis('off')
-        final_best = best_fitness[-1] if best_fitness else 0
-        final_mean = mean_fitness[-1] if mean_fitness else 0
-        initial_best = best_fitness[0] if best_fitness else 0
-        
-        stats_text = f"""
-        ESTADÍSTICAS FINALES
-        
-        Generaciones: {len(history)}
-        Mejor fitness inicial: {initial_best:.0f}
-        Mejor fitness final: {final_best:.0f}
-        Mejora total: {final_best - initial_best:.0f}
-        
-        Fitness promedio final: {final_mean:.0f}
-        Máximo alcanzado: {max(best_fitness):.0f}
-        """
-        
-        axes[1, 1].text(0.1, 0.5, stats_text, fontsize=11, verticalalignment='center',
-                       family='monospace', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-        
-        plt.tight_layout()
-        return FigureCanvasKivyAgg(fig)
+    def _draw_empty_state(self):
+        """Dibuja un estado vacío cuando no hay datos."""
+        with self.canvas:
+            Color(0.15, 0.15, 0.15, 1)
+            Rectangle(pos=(0, 0), size=self.size)
     
-    @staticmethod
-    def create_comparison_plot(histories_dict):
-        """
-        Crea una gráfica comparativa de múltiples corridas.
+    def _draw_grid(self, x, y, width, height, max_gen, max_fit, min_fit):
+        """Dibuja el grid de referencia."""
+        with self.canvas:
+            Color(0.3, 0.3, 0.3, 0.3)
+            
+            # Líneas verticales (generaciones)
+            for i in range(self.grid_lines + 1):
+                gen_x = x + (i / self.grid_lines) * width
+                Line(points=[gen_x, y, gen_x, y + height], width=0.5)
+            
+            # Líneas horizontales (fitness)
+            for i in range(self.grid_lines + 1):
+                fit_y = y + (i / self.grid_lines) * height
+                Line(points=[x, fit_y, x + width, fit_y], width=0.5)
+    
+    def _draw_fitness_lines(self, x, y, width, height, gens, best, mean, 
+                           max_gen, max_fit, min_fit):
+        """Dibuja las líneas de fitness (mejor y promedio)."""
+        if not gens or len(gens) < 2:
+            return
         
-        Args:
-            histories_dict: dict con nombre -> historial
+        range_fit = max_fit - min_fit if max_fit > min_fit else 1
         
-        Returns:
-            FigureCanvasKivyAgg: widget de Kivy con la gráfica
-        """
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # Línea de mejor fitness (verde)
+        best_points = []
+        for i, (gen, fitness) in enumerate(zip(gens, best)):
+            gen_x = x + (gen / max(max_gen, 1)) * width
+            fit_y = y + ((fitness - min_fit) / range_fit) * height
+            best_points.extend([gen_x, fit_y])
         
-        colors = plt.cm.Set2(np.linspace(0, 1, len(histories_dict)))
+        if len(best_points) >= 4:
+            with self.canvas:
+                Color(0, 1, 0, 0.9)  # Verde
+                Line(points=best_points, width=2)
         
-        for (name, history), color in zip(histories_dict.items(), colors):
-            generations = [h['generation'] for h in history]
-            best_fitness = [h['best_fitness'] for h in history]
-            ax.plot(generations, best_fitness, linewidth=2, label=name, color=color)
+        # Línea de fitness promedio (azul)
+        mean_points = []
+        for i, (gen, fitness) in enumerate(zip(gens, mean)):
+            gen_x = x + (gen / max(max_gen, 1)) * width
+            fit_y = y + ((fitness - min_fit) / range_fit) * height
+            mean_points.extend([gen_x, fit_y])
         
-        ax.set_xlabel('Generación', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Mejor Fitness', fontsize=12, fontweight='bold')
-        ax.set_title('Comparación de Entrenamientos - EvoSnake', fontsize=14, fontweight='bold')
-        ax.legend(loc='upper left', fontsize=10)
-        ax.grid(True, alpha=0.3)
+        if len(mean_points) >= 4:
+            with self.canvas:
+                Color(0, 0.5, 1, 0.7)  # Azul
+                Line(points=mean_points, width=1, dash_length=4, dash_offset=2)
+    
+    def _draw_axes(self, x, y, width, height, max_gen, max_fit, min_fit):
+        """Dibuja los ejes X e Y."""
+        with self.canvas:
+            Color(0.7, 0.7, 0.7, 1)
+            
+            # Eje X (horizontal)
+            Line(points=[x, y, x + width, y], width=1)
+            
+            # Eje Y (vertical)
+            Line(points=[x, y, x, y + height], width=1)
+    
+    def _draw_labels(self, x, y, width, height, current_fitness, current_gen):
+        """Dibuja etiquetas de información."""
+        # Limpiar widgets previos (etiquetas)
+        for widget in self.children[:]:
+            if isinstance(widget, Label):
+                self.remove_widget(widget)
         
-        plt.tight_layout()
-        return FigureCanvasKivyAgg(fig)
+        # Etiqueta de generación actual en esquina inferior derecha
+        gen_label = Label(
+            text=f'Gen: {int(current_gen)}',
+            size_hint=(None, None),
+            size=(80, 30),
+            pos=(x + width - 100, y - 40),
+            font_size='12sp',
+            color=(0.7, 0.7, 0.7, 1)
+        )
+        self.add_widget(gen_label)
+        
+        # Etiqueta de mejor fitness en esquina superior derecha
+        fit_label = Label(
+            text=f'Best: {int(current_fitness)}',
+            size_hint=(None, None),
+            size=(100, 30),
+            pos=(x + width - 120, y + height + 10),
+            font_size='12sp',
+            color=(0, 1, 0, 1)
+        )
+        self.add_widget(fit_label)
 
 
 class GameVisualizer:
     """
-    Visualiza el juego en tiempo real en Kivy.
+    Visualizador del juego Snake que convierte el estado del juego a RGB.
     """
     
-    def __init__(self):
-        pass
-    
     @staticmethod
-    def get_game_frame(game):
+    def get_game_frame(game, cell_size=10):
         """
-        Obtiene un array RGB de la pantalla del juego.
+        Genera un frame RGB del estado actual del juego con borde blanco de 2px.
         
         Args:
-            game: SnakeGame instance
+            game: objeto SnakeGame
+            cell_size: tamaño de cada celda en píxeles
         
         Returns:
-            array RGB de forma (height, width, 3)
+            np.array: frame RGB escalado con borde blanco
         """
-        grid = game.get_state()
-        height, width = grid.shape
+        # Colores
+        BACKGROUND = np.array([50, 50, 50], dtype=np.uint8)      # Gris oscuro
+        FOOD = np.array([255, 100, 100], dtype=np.uint8)         # Rojo
+        SNAKE_BODY = np.array([100, 200, 100], dtype=np.uint8)   # Verde claro
+        SNAKE_HEAD = np.array([0, 255, 0], dtype=np.uint8)       # Verde brillante
+        BORDER = np.array([255, 255, 255], dtype=np.uint8)       # Blanco
         
-        # Crear imagen RGB
-        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        # Crear grid base (grid_size x grid_size)
+        grid_size = game.grid_size
+        frame = np.full((grid_size, grid_size, 3), BACKGROUND, dtype=np.uint8)
         
-        # Color de fondo (negro)
-        frame[:, :] = [0, 0, 0]
+        # Dibujar comida
+        food_x, food_y = game.get_food()
+        frame[food_y, food_x] = FOOD
         
-        # Color de comida (rojo)
-        food_x, food_y = game.food
-        frame[food_y, food_x] = [255, 0, 0]
-        
-        # Color de snake (verde), cabeza más brillante
+        # Dibujar snake
         snake_body = game.get_snake_body()
         for i, (x, y) in enumerate(snake_body):
-            # Gradiente de verde: cola más oscura, cabeza más brillante
-            intensity = int(100 + (150 * i / len(snake_body)))
-            frame[y, x] = [0, intensity, 0]
+            if i == len(snake_body) - 1:  # Cabeza
+                frame[y, x] = SNAKE_HEAD
+            else:
+                frame[y, x] = SNAKE_BODY
         
-        return frame
+        # Escalar frame (grid_size * cell_size x grid_size * cell_size)
+        frame_scaled = np.repeat(np.repeat(frame, cell_size, axis=0), 
+                                 cell_size, axis=1)
+        
+        # Añadir borde blanco de 2px usando np.pad
+        # Esto añade 2px arriba, 2px abajo, 2px izquierda, 2px derecha
+        frame_with_border = np.pad(frame_scaled, 
+                                  pad_width=((2, 2), (2, 2), (0, 0)),
+                                  mode='constant',
+                                  constant_values=255)
+        
+        return frame_with_border
+    
+    @staticmethod
+    def save_frame_as_kivy_image(frame):
+        """
+        Convierte un frame numpy a formato Kivy Image.
+        
+        Args:
+            frame: np.array RGB
+        
+        Returns:
+            str: ruta al archivo temporal PNG
+        """
+        # Convertir numpy array a PIL Image
+        pil_img = PILImage.fromarray(frame.astype(np.uint8))
+        
+        # Guardar en BytesIO
+        img_bytes = BytesIO()
+        pil_img.save(img_bytes, format='PNG')
+        img_bytes.seek(0)
+        
+        # Retornar ruta temporal
+        import tempfile
+        import os
+        
+        # Crear archivo temporal
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        temp_file.write(img_bytes.getvalue())
+        temp_file.close()
+        
+        return temp_file.name
+
