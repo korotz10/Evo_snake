@@ -12,7 +12,7 @@ GAME_CONFIG = {
 
 # ==================== Configuración de la Red Neuronal ====================
 NEURAL_NETWORK_CONFIG = {
-    'input_size': 15,               # Número de sensores de entrada (incluye 3 de peligro inmediato)
+    'input_size': 11,               # Número de sensores de entrada (3 peligro, 4 dir, 4 comida)
     'hidden_size': 8,               # Neuronas en capa oculta
     'output_size': 4,               # Número de salidas (UP, DOWN, LEFT, RIGHT)
     'weight_init_scale': 0.1,       # Escala de inicialización de pesos

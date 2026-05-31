@@ -1,248 +1,133 @@
-# EvoSnake 🐍🧬
+# 🐍🧬 EvoSnake — Serpiente con IA Evolutiva
 
-Una aplicación móvil Android desarrollada en Python con Kivy que implementa el juego **Snake** controlado por una **IA que aprende sola** mediante una combinación de:
-- **Red Neuronal Simple** (NumPy)
-- **Algoritmo Genético** (DEAP)
+> **Neuroevolución aplicada al juego Snake**: una población de redes neuronales evoluciona mediante un algoritmo genético hasta aprender a jugar Snake de forma autónoma.
 
-La IA evoluciona los pesos de la red neuronal para mejorar su desempeño jugando Snake.
+Proyecto final de **Computación Blanda** — Semestre VII.
 
-## 🎯 Características
+---
 
-✅ **IA Evolucionable**: Usa algoritmo genético para optimizar pesos de la red neuronal  
-✅ **Red Neuronal Feedforward**: Arquitectura [12 inputs → 8 ocultas → 4 salidas]  
-✅ **Interfaz Táctil**: Diseñada para pantallas pequeñas de Android  
-✅ **Visualización en Tiempo Real**: Gráficas de fitness actualizadas durante entrenamiento  
-✅ **Threading**: Entrenamiento en thread separado sin bloquear UI  
-✅ **Compatible con Pydroid 3**: Funciona en dispositivos Android  
+## 📋 Tabla de Contenidos
 
-## 📁 Estructura del Proyecto
+- [Descripción](#-descripción)
+- [Características](#-características)
+- [Arquitectura del Proyecto](#-arquitectura-del-proyecto)
+- [Cómo Funciona la IA](#-cómo-funciona-la-ia)
+- [Requisitos](#-requisitos)
+- [Instalación y Uso](#-instalación-y-uso)
+- [Configuración](#-configuración)
 
+---
+
+## 📖 Descripción
+
+**EvoSnake** es un sistema de inteligencia artificial que aprende a jugar el clásico juego **Snake** sin ninguna programación explícita de reglas de juego. En lugar de usar técnicas tradicionales de aprendizaje supervisado, el proyecto emplea **neuroevolución**: un algoritmo genético optimiza directamente los pesos de redes neuronales a lo largo de múltiples generaciones.
+
+La aplicación cuenta con una **interfaz gráfica moderna estilo Retro Arcade** desarrollada en Kivy, la cual permite entrenar la IA viendo las métricas en tiempo real y, posteriormente, ver a los mejores ejemplares ("campeones") jugar de forma autónoma.
+
+---
+
+## ✨ Características
+
+| Categoría | Detalle |
+|-----------|---------|
+| 🧠 **Red Neuronal** | Feedforward con NumPy puro — Arquitectura ligera de 11 entradas, 8 neuronas ocultas y 4 salidas. |
+| 🧬 **Algoritmo Genético** | Implementado con la librería **DEAP**. Selección por torneo, cruce y mutación gaussiana. |
+| 🎮 **Motor de Juego** | Snake completo con sistema de **energía** (cada paso consume energía, comer la restaura) y sistema de sensores espaciales. |
+| 📊 **Visualización UI** | Interfaz gráfica fluida en **Kivy** con renderizado gráfico optimizado (sin bloquear el hilo principal). Gráficas de fitness en tiempo real usando el canvas nativo. |
+| 🖥️ **Modos de UI** | Pantalla de menú, entrenamiento (con slider de velocidad), juego (viendo jugar a los campeones) y resultados. |
+
+---
+
+## 📁 Arquitectura del Proyecto
+
+```text
+Evo_Snake/
+├── main.py               # Punto de entrada — Interfaz gráfica Kivy y ScreenManager
+├── snake_game.py         # Motor del juego Snake + sistema de 11 sensores + sistema de energía
+├── neural_net.py         # Red neuronal feedforward (NumPy)
+├── genetic_algo.py       # Algoritmo genético (basado en DEAP)
+├── visualizer.py         # Renderizado de texturas para Kivy y gráficas nativas
+├── config.py             # Configuración centralizada (diccionarios)
+├── requirements.txt      # Dependencias del proyecto
+└── README.md             # Este archivo
 ```
-EvoSnake/
-├── main.py              # App Kivy con navegación entre pantallas
-├── snake_game.py        # Motor del juego
-├── neural_net.py        # Red neuronal en NumPy
-├── genetic_algo.py      # Algoritmo genético con DEAP
-├── visualizer.py        # Gráficas de fitness y juego
-├── requirements.txt     # Dependencias
-└── README.md           # Este archivo
-```
+
+---
 
 ## 🧠 Cómo Funciona la IA
 
-### 1. **Sensores del Snake** (12 inputs)
-La red neuronal recibe como entrada:
-- **Distancia a paredes** (4 valores): arriba, abajo, izquierda, derecha
-- **Dirección a la comida** (2 valores): diferencia X, Y normalizada
-- **Distancia Manhattan a comida** (1 valor): normalizada
-- **Dirección actual** (4 valores): one-hot encoding (UP, DOWN, LEFT, RIGHT)
-- **Comida comida** (1 valor): cantidad acumulada normalizada
+### 1. Sistema de Sensores (11 entradas)
 
-### 2. **Arquitectura de la Red**
+La serpiente cuenta con **11 sensores** clave para tomar decisiones en cada momento:
+
+- **3 Sensores de peligro inmediato (Binarios):** Detectan si hay pared o cuerpo a la Izquierda relativa, al Frente o a la Derecha relativa.
+- **4 Sensores de dirección actual (One-Hot):** Indican si la serpiente se mueve al Norte, Sur, Este u Oeste.
+- **4 Sensores de posición de comida (Binarios):** Indican si la comida se encuentra al Norte, Sur, Este u Oeste respecto a la cabeza.
+
+### 2. Arquitectura de la Red Neuronal
+
+```text
+Entrada (11) → Oculta (8) → Salida (4)
 ```
-Entrada (12) → ReLU(8) → Softmax(4) → Salida
+La red toma los 11 valores de los sensores, los procesa en una capa oculta de 8 neuronas y emite un resultado en una capa de salida de 4 neuronas (las 4 direcciones posibles). La dirección con el valor más alto es la acción elegida.
+
+### 3. Algoritmo Genético (DEAP)
+
+- **Población:** 100 - 150 individuos por generación.
+- **Generaciones:** 50 - 100.
+- **Selección:** Torneo (tamaño 3).
+- **Cruce:** Probabilidad alta (70%-80%).
+- **Mutación:** Probabilidad de 20%-30% con perturbación gaussiana.
+
+### 4. Función de Fitness y Sistema de Energía
+
+La serpiente tiene una energía inicial (ej: 300). Cada paso resta 1 punto de energía; si llega a 0, muere. Al comer, recupera 150 puntos.
+El **Fitness** se calcula así:
+```text
+Fitness = (comidas * 1000) + pasos_sobrevividos + bonus_proximidad
 ```
-- **Capa oculta**: 8 neuronas con activación ReLU
-- **Capa salida**: 4 neuronas con softmax (probabilities para UP/DOWN/LEFT/RIGHT)
-- **Total de parámetros**: 12×8 + 8 + 8×4 + 4 = **152 parámetros**
+El bonus de proximidad (distancia Manhattan a la comida) ayuda a guiar a las serpientes hacia el alimento en las primeras generaciones cuando aún no saben comer.
 
-### 3. **Algoritmo Genético**
-- **Población**: 50 individuos
-- **Generaciones**: 30 máximo
-- **Cromosoma**: Vector de 152 pesos de la red neuronal
-- **Selección**: Torneo de tamaño 3
-- **Cruce**: Un punto sobre los vectores de pesos
-- **Mutación**: Gaussiana con σ=0.1, probabilidad 20%
+---
 
-### 4. **Fitness**
-```
-Fitness = (Comida comida × 100) + Pasos sin morir
-```
-Favorece comer comida y sobrevivir el máximo tiempo posible.
+## 📋 Requisitos
 
-## 📱 Pantallas de la App
+- **Python** 3.8+
+- Las dependencias se encuentran en `requirements.txt`:
+  - `kivy`
+  - `numpy`
+  - `deap`
+  - `Pillow`
 
-### 1. **Menú Principal**
-- Título "EvoSnake"
-- Botón "Entrenar IA"
-- Botón "Ver Mejor Snake"
+---
 
-### 2. **Pantalla de Entrenamiento**
-- Barra de progreso (generación actual)
-- Mejor fitness en tiempo real
-- Gráfica matplotlib del fitness por generación (actualizada en vivo)
-- Botón para iniciar/pausar
+## 🚀 Instalación y Uso
 
-### 3. **Pantalla de Juego**
-- Snake juega automáticamente en un grid 20×20
-- Visualización del juego
-- Métricas: comida comida, pasos, fitness
-- Controles: Play/Pause, Reset, Volver
+1. **Clonar e instalar dependencias:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### 4. **Pantalla de Resultados**
-- Gráficas resumidas de la evolución
-- Estadísticas finales
-- Botones para volver o jugar
+2. **Ejecutar la Aplicación Gráfica:**
+   ```bash
+   python main.py
+   ```
+   
+Esto abrirá la interfaz Kivy donde podrás:
+1. Ir a **Entrenar IA** para iniciar el proceso evolutivo (puedes ajustar la velocidad con el slider).
+2. Cuando el entrenamiento finalice, ir a **Ver Mejor Snake** para ver a la IA jugar autónomamente. Puedes usar el menú desplegable para ver cómo jugaba la generación 0 frente a la generación final.
 
-## 🚀 Instalación
+---
 
-### Requisitos
-- Python 3.8+
-- pip
+## ⚙️ Configuración
 
-### Pasos
+Todos los hiperparámetros del sistema se pueden ajustar desde el archivo **`config.py`**. Está dividido en diccionarios temáticos:
 
-1. **Clonar/Descargar el proyecto**
-```bash
-cd EvoSnake
-```
-
-2. **Crear entorno virtual (recomendado)**
-```bash
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
-```
-
-3. **Instalar dependencias**
-```bash
-pip install -r requirements.txt
-```
-
-4. **Instalar el add-on de matplotlib para Kivy**
-```bash
-garden install matplotlib
-```
-
-## 🎮 Uso
-
-### En PC (Linux/Mac/Windows)
-```bash
-python main.py
-```
-
-### En Pydroid 3 (Android)
-1. Abrir Pydroid 3
-2. Crear nuevo proyecto
-3. Copiar todos los archivos `.py` al directorio del proyecto
-4. Instalar pip packages: numpy, deap, kivy, matplotlib, Pillow
-5. Ejecutar `main.py`
-
-**Nota**: Pydroid 3 es más lento. El entrenamiento puede tomar más tiempo en Android.
-
-## 📊 Estructura del Código
-
-### `snake_game.py`
-- Clase `SnakeGame`: Motor del juego
-- Métodos clave:
-  - `step()`: Mueve el snake un paso
-  - `get_sensors()`: Retorna inputs para la red neuronal
-  - `calculate_fitness()`: Calcula fitness del juego
-  - `get_state()`: Retorna grid del juego
-
-### `neural_net.py`
-- Clase `NeuralNetwork`: Red feedforward simple
-- Métodos clave:
-  - `forward(inputs)`: Propaga inputs hacia adelante
-  - `predict(inputs)`: Retorna clase predicha (dirección)
-  - `get_weights_flat()`: Retorna pesos como vector 1D
-  - `set_weights_flat(weights)`: Establece pesos desde vector 1D
-
-### `genetic_algo.py`
-- Clase `SnakeGeneticAlgorithm`: GA con DEAP
-- Métodos clave:
-  - `evolve(callback)`: Ejecuta el algoritmo genético
-  - `evaluate(individual)`: Evalúa un individuo (plays a game)
-  - `get_best_network()`: Retorna la mejor red entrenada
-
-### `visualizer.py`
-- Clase `FitnessVisualizer`: Gráficas de fitness
-- Clase `GameVisualizer`: Visualización del juego
-- Métodos clave:
-  - `update_plot(history)`: Gráfica en tiempo real
-  - `create_summary_plot(history)`: Gráfica de resumen
-  - `get_game_frame(game)`: Obtiene frame RGB del juego
-
-### `main.py`
-- Clase `MenuScreen`: Pantalla de menú
-- Clase `TrainingScreen`: Pantalla de entrenamiento
-- Clase `GameScreen`: Pantalla de juego
-- Clase `ResultsScreen`: Pantalla de resultados
-- Clase `EvoSnakeApp`: Aplicación principal
-
-## 🔧 Personalizaciones
-
-Puedes modificar estos parámetros en `genetic_algo.py`:
-
-```python
-ga = SnakeGeneticAlgorithm(
-    population_size=50,        # Tamaño de población
-    generations=30,            # Número de generaciones
-    mutation_prob=0.2,         # Probabilidad de mutación
-    mutation_sigma=0.1,        # Desviación estándar de mutación
-    grid_size=20               # Tamaño del grid (20x20)
-)
-```
-
-O en `main.py` puedes cambiar la velocidad del juego:
-
-```python
-self.game_speed = 0.1  # segundos por step (reduce para jugar más rápido)
-```
-
-## 📈 Resultados Esperados
-
-Después de 30 generaciones, la IA debería:
-- **Generación 0**: Fitness ~50-200 (mueve aleatoriamente)
-- **Generación 10**: Fitness ~300-500 (aprende a evitar paredes)
-- **Generación 20**: Fitness ~600-1000 (aprende a buscar comida)
-- **Generación 30**: Fitness ~1000-2000+ (juega razonablemente bien)
-
-El fitness exacto depende de la aleatoriedad y el desempeño del GA.
-
-## 🐛 Troubleshooting
-
-### Error: "No module named 'deap'"
-```bash
-pip install deap
-```
-
-### Error: "No module named 'kivy'"
-```bash
-pip install kivy
-```
-
-### En Pydroid 3: matplotlib no se visualiza correctamente
-- Pydroid 3 tiene limitaciones con matplotlib
-- Considera usar versiones más simples de gráficas o ASCII art
-
-### El juego es muy lento
-- Aumenta `self.game_speed` en `GameScreen` (por ejemplo, a 0.05)
-- O reduce `grid_size` a 15 o 10 para juegos más pequeños
-
-## 📝 Notas Técnicas
-
-- **Sin Backpropagation**: El GA optimiza los pesos directamente, no hay descenso de gradiente
-- **Evaluación Costosa**: Cada individuo juega una partida completa, lo que es computacionalmente costoso
-- **Threading**: El entrenamiento corre en un thread separado para no bloquear la UI
-- **Estabilidad Numérica**: Se usa resta del máximo en softmax para evitar overflow
-
-## 🎓 Conceptos Educativos
-
-Este proyecto enseña:
-- ✅ Redes neuronales feedforward
-- ✅ Algoritmos genéticos
-- ✅ Optimización sin gradientes
-- ✅ Desarrollo de aplicaciones con Kivy
-- ✅ Threading en Python
-- ✅ Visualización de datos con matplotlib
-
-## 📄 Licencia
-
-Este proyecto es de código abierto y libre de usar con fines educativos.
-
-## 👨‍💻 Autor
-
-Proyecto desarrollado como trabajo final de Computación Blanda.
+- `GAME_CONFIG`: Tamaño de grilla y tamaños iniciales.
+- `NEURAL_NETWORK_CONFIG`: Tamaño de capas de la red neuronal.
+- `GA_CONFIG`: Tamaño de población, generaciones y probabilidades genéticas.
+- `FITNESS_CONFIG`: Puntuaciones de recompensas y penalidades.
+- `UI_CONFIG` & `VISUALIZATION_CONFIG`: Colores de la paleta Retro Arcade y métricas visuales.
 
 ---
 
