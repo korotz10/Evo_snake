@@ -13,6 +13,19 @@ from kivy.uix.image import Image
 from io import BytesIO
 from PIL import Image as PILImage
 
+from config import get_config
+
+
+UI_THEME = get_config('ui')
+VIS_THEME = get_config('visualization')
+BACKGROUND = tuple(np.array(VIS_THEME['background_color'], dtype=np.float32) / 255.0)
+GRID = tuple(np.array(VIS_THEME.get('grid_color', [40, 90, 140]), dtype=np.float32) / 255.0)
+GREEN = tuple(np.array(VIS_THEME['snake_color_tail'], dtype=np.float32) / 255.0)
+BLUE = tuple(np.array([40, 165, 255], dtype=np.float32) / 255.0)
+YELLOW = tuple(np.array(VIS_THEME['food_color'], dtype=np.float32) / 255.0)
+TEXT = tuple(UI_THEME['retro_text'])
+RETRO_FONT = r'C:\Windows\Fonts\cour.ttf'
+
 
 class FitnessCanvasWidget(Widget):
     """
@@ -75,7 +88,7 @@ class FitnessCanvasWidget(Widget):
         # Dibujar fondo
         with self.canvas:
             # Fondo oscuro
-            Color(0.15, 0.15, 0.15, 1)
+            Color(*BACKGROUND, 1)
             Rectangle(pos=(plot_x, plot_y), size=(plot_width, plot_height))
         
         # Dibujar grid
@@ -99,13 +112,13 @@ class FitnessCanvasWidget(Widget):
     def _draw_empty_state(self):
         """Dibuja un estado vacío cuando no hay datos."""
         with self.canvas:
-            Color(0.15, 0.15, 0.15, 1)
+            Color(*BACKGROUND, 1)
             Rectangle(pos=(0, 0), size=self.size)
     
     def _draw_grid(self, x, y, width, height, max_gen, max_fit, min_fit):
         """Dibuja el grid de referencia."""
         with self.canvas:
-            Color(0.3, 0.3, 0.3, 0.3)
+            Color(*GRID, 0.28)
             
             # Líneas verticales (generaciones)
             for i in range(self.grid_lines + 1):
@@ -134,7 +147,7 @@ class FitnessCanvasWidget(Widget):
         
         if len(best_points) >= 4:
             with self.canvas:
-                Color(0, 1, 0, 0.9)  # Verde
+                Color(*GREEN, 0.95)  # Verde arcade
                 Line(points=best_points, width=2)
         
         # Línea de fitness promedio (azul)
@@ -146,13 +159,13 @@ class FitnessCanvasWidget(Widget):
         
         if len(mean_points) >= 4:
             with self.canvas:
-                Color(0, 0.5, 1, 0.7)  # Azul
+                Color(*BLUE, 0.85)  # Azul arcade
                 Line(points=mean_points, width=1, dash_length=4, dash_offset=2)
     
     def _draw_axes(self, x, y, width, height, max_gen, max_fit, min_fit):
         """Dibuja los ejes X e Y."""
         with self.canvas:
-            Color(0.7, 0.7, 0.7, 1)
+            Color(1.0, 0.9, 0.2, 1)
             
             # Eje X (horizontal)
             Line(points=[x, y, x + width, y], width=1)
@@ -174,7 +187,8 @@ class FitnessCanvasWidget(Widget):
             size=(80, 30),
             pos=(x + width - 100, y - 40),
             font_size='12sp',
-            color=(0.7, 0.7, 0.7, 1)
+            color=TEXT,
+            font_name=RETRO_FONT
         )
         self.add_widget(gen_label)
         
@@ -185,7 +199,8 @@ class FitnessCanvasWidget(Widget):
             size=(100, 30),
             pos=(x + width - 120, y + height + 10),
             font_size='12sp',
-            color=(0, 1, 0, 1)
+            color=YELLOW + (1,) if len(YELLOW) == 3 else YELLOW,
+            font_name=RETRO_FONT
         )
         self.add_widget(fit_label)
 
@@ -208,11 +223,11 @@ class GameVisualizer:
             np.array: frame RGB escalado con borde blanco
         """
         # Colores
-        BACKGROUND = np.array([50, 50, 50], dtype=np.uint8)      # Gris oscuro
-        FOOD = np.array([255, 100, 100], dtype=np.uint8)         # Rojo
-        SNAKE_BODY = np.array([100, 200, 100], dtype=np.uint8)   # Verde claro
-        SNAKE_HEAD = np.array([0, 255, 0], dtype=np.uint8)       # Verde brillante
-        BORDER = np.array([255, 255, 255], dtype=np.uint8)       # Blanco
+        BACKGROUND = np.array(VIS_THEME['background_color'], dtype=np.uint8)    # Azul oscuro
+        FOOD = np.array(VIS_THEME['food_color'], dtype=np.uint8)                # Amarillo neón
+        SNAKE_BODY = np.array(VIS_THEME['snake_color_tail'], dtype=np.uint8)    # Verde arcade
+        SNAKE_HEAD = np.array([80, 255, 140], dtype=np.uint8)                    # Verde brillante
+        BORDER = np.array([40, 165, 255], dtype=np.uint8)                       # Azul neón
         
         # Crear grid base (grid_size x grid_size)
         grid_size = game.grid_size
@@ -233,13 +248,21 @@ class GameVisualizer:
         # Escalar frame (grid_size * cell_size x grid_size * cell_size)
         frame_scaled = np.repeat(np.repeat(frame, cell_size, axis=0), 
                                  cell_size, axis=1)
+
+        # Añadir una rejilla de píxeles muy sutil para reforzar el aspecto 8-bit
+        frame_scaled[::cell_size, :, :] = np.clip(frame_scaled[::cell_size, :, :] + 12, 0, 255)
+        frame_scaled[:, ::cell_size, :] = np.clip(frame_scaled[:, ::cell_size, :] + 12, 0, 255)
         
-        # Añadir borde blanco de 2px usando np.pad
+        # Añadir borde neón de 2px usando np.pad
         # Esto añade 2px arriba, 2px abajo, 2px izquierda, 2px derecha
         frame_with_border = np.pad(frame_scaled, 
                                   pad_width=((2, 2), (2, 2), (0, 0)),
                                   mode='constant',
-                                  constant_values=255)
+                      constant_values=0)
+        frame_with_border[:2, :, :] = np.array([40, 165, 255], dtype=np.uint8)
+        frame_with_border[-2:, :, :] = np.array([40, 165, 255], dtype=np.uint8)
+        frame_with_border[:, :2, :] = np.array([1, 255, 160], dtype=np.uint8)
+        frame_with_border[:, -2:, :] = np.array([1, 255, 160], dtype=np.uint8)
         
         return frame_with_border
     

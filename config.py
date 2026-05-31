@@ -45,16 +45,25 @@ UI_CONFIG = {
     'font_size_title': '18sp',      # Tamaño de fuente para títulos
     'font_size_button': '14sp',     # Tamaño de fuente para botones
     'font_size_label': '12sp',      # Tamaño de fuente para labels
+    'retro_background': [0.03, 0.05, 0.10, 1],   # Azul muy oscuro
+    'retro_panel': [0.05, 0.08, 0.16, 1],        # Azul arcade
+    'retro_panel_alt': [0.08, 0.10, 0.05, 1],    # Verde muy oscuro
+    'retro_border': [1.0, 0.85, 0.15, 1],        # Amarillo neón
+    'retro_green': [0.15, 1.0, 0.35, 1],         # Verde neón
+    'retro_blue': [0.20, 0.65, 1.0, 1],          # Azul neón
+    'retro_yellow': [1.0, 0.92, 0.20, 1],        # Amarillo neón
+    'retro_text': [0.90, 1.0, 0.72, 1],          # Verde pálido
 }
 
 # ==================== Configuración de Visualización ====================
 VISUALIZATION_CONFIG = {
     'plot_update_interval': 1,      # Actualizar gráfica cada N generaciones
     'game_frame_scale': 10,         # Escalar cada celda a NxN píxeles
-    'snake_color_tail': [0, 100, 0],      # RGB para cola del snake
-    'snake_color_head': [0, 255, 0],      # RGB para cabeza del snake
-    'food_color': [255, 0, 0],            # RGB para comida
-    'background_color': [0, 0, 0],        # RGB para fondo
+    'snake_color_tail': [0, 180, 80],     # Verde arcade para cola
+    'snake_color_head': [80, 255, 140],   # Verde brillante para cabeza
+    'food_color': [255, 220, 40],         # Amarillo arcade para comida
+    'background_color': [10, 18, 40],     # Azul oscuro para fondo
+    'grid_color': [40, 90, 140],          # Azul para referencia
 }
 
 # ==================== Configuración de Logging ====================
