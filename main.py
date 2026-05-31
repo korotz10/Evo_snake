@@ -271,8 +271,8 @@ class TrainingScreen(Screen):
         try:
             app = App.get_running_app()
             ga = SnakeGeneticAlgorithm(
-                population_size=100,
-                generations=50,
+                population_size=150,
+                generations=100,
                 mutation_prob=0.2,
                 mutation_sigma=0.1,
                 crossover_prob=0.7,

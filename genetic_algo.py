@@ -27,8 +27,8 @@ class SnakeGeneticAlgorithm:
     """
     
     def __init__(self, 
-                 population_size=100,
-                 generations=50,
+                 population_size=150,
+                 generations=100,
                  mutation_prob=0.2,
                  mutation_sigma=0.1,
                  crossover_prob=0.7,
@@ -185,7 +185,7 @@ class SnakeGeneticAlgorithm:
         """
         Ejecuta el algoritmo genético con elitismo estricto.
         
-        Elitismo: Los 2 mejores individuos pasan directamente a la siguiente
+        Elitismo: Los 3 mejores individuos pasan directamente a la siguiente
         generación sin mutación ni cruce.
         
         Campeones: Se guardan los mejores individuos cada 10 generaciones.
@@ -220,8 +220,8 @@ class SnakeGeneticAlgorithm:
                 self.best_fitness = best_fit
                 self.best_individual = max(population, key=lambda x: x.fitness.values[0])
             
-            # Guardar campeón cada 10 generaciones
-            if gen % 10 == 0:
+            # Guardar campeón cada 10 generaciones (hasta generación 100)
+            if gen % 10 == 0 and gen <= 100:
                 self.champions[gen] = self.toolbox.clone(
                     max(population, key=lambda x: x.fitness.values[0])
                 )
@@ -242,8 +242,8 @@ class SnakeGeneticAlgorithm:
                     'max': max(fits)
                 })
             
-            # ELITISMO ESTRICTO: Clonar los 2 mejores sin mutación ni cruce
-            elite = sorted(population, key=lambda x: x.fitness.values[0], reverse=True)[:2]
+            # ELITISMO ESTRICTO: Clonar los 3 mejores sin mutación ni cruce
+            elite = sorted(population, key=lambda x: x.fitness.values[0], reverse=True)[:3]
             offspring = [self.toolbox.clone(ind) for ind in elite]
             
             # Completar el resto de la población con selección + cruce + mutación

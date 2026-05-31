@@ -45,8 +45,8 @@ class SnakeGame:
         self.next_direction = Direction.RIGHT
         self.steps = 0
         self.food_eaten = 0
-        self.energy = 200  # Energía inicial
-        self.max_energy = 400  # Energía máxima
+        self.energy = 300  # Energía inicial
+        self.max_energy = 600  # Energía máxima
         self.game_over = False
         self.death_reason = None  # Razón de fin de juego
         
@@ -110,8 +110,8 @@ class SnakeGame:
         # Verificar si comió comida
         if new_head == self.food:
             self.food_eaten += 1
-            # Añadir 100 de energía, con tope de max_energy
-            self.energy = min(self.energy + 100, self.max_energy)
+            # Añadir 150 de energía, con tope de max_energy
+            self.energy = min(self.energy + 150, self.max_energy)
             self.food = self._generate_food()
         else:
             # Si no comió, remover la cola para mantener el tamaño
