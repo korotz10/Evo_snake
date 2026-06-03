@@ -78,6 +78,9 @@ PYDROID_CONFIG = {
     'is_pydroid': False,            # Set to True if running on Pydroid 3
     'use_kivy_garden': True,        # Usar jardín de Kivy para matplotlib
     'game_speed_pydroid': 0.2,      # Velocidad más lenta en Pydroid
+    'grid_size_pydroid': 15,        # Grid más pequeño para móviles
+    'training_generations_pydroid': 15,
+    'training_population_size_pydroid': 20,
 }
 
 

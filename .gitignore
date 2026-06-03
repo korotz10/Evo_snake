@@ -4,4 +4,7 @@ venv/
 env/
 ENV/
 
+# Preferencias locales de la UI
+training_session_settings.json
+
 # Caché de Python

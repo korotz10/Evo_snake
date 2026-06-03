@@ -7,10 +7,12 @@ Nuevo: FitnessCanvasWidget (sin matplotlib), Slider de velocidad, Spinner de cam
 import threading
 import time
 import json
+import os
 import numpy as np
 from typing import cast
 from pathlib import Path
 from kivy.app import App
+from kivy.resources import resource_find
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
@@ -35,6 +37,14 @@ from visualizer import FitnessCanvasWidget, GameVisualizer
 
 
 UI_THEME = get_config('ui')
+BASE_GAME_CONFIG = get_config('game')
+BASE_GA_CONFIG = get_config('ga')
+PYDROID_SETTINGS = get_config('pydroid')
+IS_PYDROID = bool(PYDROID_SETTINGS.get('is_pydroid')) or bool(os.environ.get('ANDROID_ARGUMENT'))
+GAME_GRID_SIZE = int(PYDROID_SETTINGS.get('grid_size_pydroid', 15 if IS_PYDROID else BASE_GAME_CONFIG.get('grid_size', 20)))
+DEFAULT_TRAINING_GENERATIONS = int(PYDROID_SETTINGS.get('training_generations_pydroid', 15 if IS_PYDROID else BASE_GA_CONFIG.get('generations', 100)))
+DEFAULT_TRAINING_POPULATION = int(PYDROID_SETTINGS.get('training_population_size_pydroid', 20 if IS_PYDROID else BASE_GA_CONFIG.get('population_size', 100)))
+DEFAULT_GAME_SPEED = float(PYDROID_SETTINGS.get('game_speed_pydroid', 0.2 if IS_PYDROID else UI_THEME['game_speed']))
 WINDOW_BG = tuple(UI_THEME['retro_background'])
 PANEL_BG = tuple(UI_THEME['retro_panel'])
 PANEL_BG_ALT = tuple(UI_THEME['retro_panel_alt'])
@@ -44,8 +54,8 @@ BLUE = tuple(UI_THEME['retro_blue'])
 YELLOW = tuple(UI_THEME['retro_yellow'])
 TEXT = tuple(UI_THEME['retro_text'])
 RETRO_FONT = r'C:\Windows\Fonts\cour.ttf'
-TRAINING_GENERATIONS = get_config('ga').get('generations', 100)
-TRAINING_POPULATION = get_config('ga').get('population_size', 100)
+TRAINING_GENERATIONS = BASE_GA_CONFIG.get('generations', 100)
+TRAINING_POPULATION = BASE_GA_CONFIG.get('population_size', 100)
 SESSION_SETTINGS_FILE = Path(__file__).with_name('training_session_settings.json')
 
 
@@ -57,10 +67,28 @@ def _session_generation_label(total_generations):
     return f'MEJOR (GEN {total_generations})'
 
 
+def _resolve_retro_font():
+    candidates = [
+        RETRO_FONT,
+        resource_find('data/fonts/RobotoMono-Regular.ttf'),
+        resource_find('data/fonts/Roboto-Regular.ttf'),
+        resource_find('data/fonts/DejaVuSans.ttf'),
+    ]
+
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+
+    return None
+
+
+RESOLVED_RETRO_FONT = _resolve_retro_font()
+
+
 def _load_training_session_settings():
     defaults = {
-        'generations': TRAINING_GENERATIONS,
-        'population_size': TRAINING_POPULATION,
+        'generations': DEFAULT_TRAINING_GENERATIONS,
+        'population_size': DEFAULT_TRAINING_POPULATION,
     }
 
     try:
@@ -117,16 +145,16 @@ def _retro_scanlines(widget, spacing=4, alpha=0.06):
 
 
 def _retro_label(label, color=TEXT, bold=False):
-    if hasattr(label, 'font_name'):
-        label.font_name = RETRO_FONT
+    if RESOLVED_RETRO_FONT and hasattr(label, 'font_name'):
+        label.font_name = RESOLVED_RETRO_FONT
     label.color = color
     label.bold = bold
     return label
 
 
 def _retro_button(button, fill_color=BLUE, text_color=WINDOW_BG):
-    if hasattr(button, 'font_name'):
-        button.font_name = RETRO_FONT
+    if RESOLVED_RETRO_FONT and hasattr(button, 'font_name'):
+        button.font_name = RESOLVED_RETRO_FONT
     button.background_normal = ''
     button.background_down = ''
     button.background_color = fill_color
@@ -136,8 +164,8 @@ def _retro_button(button, fill_color=BLUE, text_color=WINDOW_BG):
 
 
 def _retro_input(widget, fill_color=PANEL_BG_ALT, text_color=YELLOW):
-    if hasattr(widget, 'font_name'):
-        widget.font_name = RETRO_FONT
+    if RESOLVED_RETRO_FONT and hasattr(widget, 'font_name'):
+        widget.font_name = RESOLVED_RETRO_FONT
     widget.background_normal = ''
     widget.background_down = ''
     widget.background_color = fill_color
@@ -164,8 +192,9 @@ class MenuScreen(Screen):
             markup=True,
             size_hint_y=0.28 if compact else 0.3,
             color=TEXT,
-            font_name=RETRO_FONT
         )
+        if RESOLVED_RETRO_FONT:
+            title.font_name = RESOLVED_RETRO_FONT
         layout.add_widget(title)
         
         # Espaciador
@@ -229,6 +258,7 @@ class TrainingScreen(Screen):
         session_settings = _load_training_session_settings()
         self.total_generations = session_settings['generations']
         self.population_size = session_settings['population_size']
+        self.grid_size = GAME_GRID_SIZE
         
         _retro_panel(self, WINDOW_BG, BORDER, 2)
         compact = _is_compact_layout()
@@ -254,8 +284,9 @@ class TrainingScreen(Screen):
             font_size='15sp' if compact else '16sp',
             bold=True,
             color=GREEN,
-            font_name=RETRO_FONT
         )
+        if RESOLVED_RETRO_FONT:
+            self.lbl_generation.font_name = RESOLVED_RETRO_FONT
         layout.add_widget(self.lbl_generation)
         
         self.lbl_fitness = Label(
@@ -264,8 +295,9 @@ class TrainingScreen(Screen):
             height=34 if compact else 38,
             font_size='13sp' if compact else '14sp',
             color=YELLOW,
-            font_name=RETRO_FONT
         )
+        if RESOLVED_RETRO_FONT:
+            self.lbl_fitness.font_name = RESOLVED_RETRO_FONT
         layout.add_widget(self.lbl_fitness)
         
         # Barra de progreso
@@ -287,7 +319,8 @@ class TrainingScreen(Screen):
         speed_layout.add_widget(self.speed_slider)
         
         self.lbl_speed = Label(text='0.0S', size_hint_x=0.2, font_size='11sp' if compact else '12sp', color=YELLOW)
-        self.lbl_speed.font_name = RETRO_FONT
+        if RESOLVED_RETRO_FONT:
+            self.lbl_speed.font_name = RESOLVED_RETRO_FONT
         speed_layout.add_widget(self.lbl_speed)
         
         layout.add_widget(speed_layout)
@@ -302,8 +335,9 @@ class TrainingScreen(Screen):
             height=24,
             font_size='11sp' if compact else '12sp',
             color=GREEN,
-            font_name=RETRO_FONT
         )
+        if RESOLVED_RETRO_FONT:
+            self.lbl_generation_setting.font_name = RESOLVED_RETRO_FONT
         session_layout.add_widget(self.lbl_generation_setting)
 
         self.generations_slider = Slider(min=10, max=200, step=10, value=self.total_generations)
@@ -316,13 +350,19 @@ class TrainingScreen(Screen):
             height=24,
             font_size='11sp' if compact else '12sp',
             color=GREEN,
-            font_name=RETRO_FONT
         )
+        if RESOLVED_RETRO_FONT:
+            self.lbl_population_setting.font_name = RESOLVED_RETRO_FONT
         session_layout.add_widget(self.lbl_population_setting)
 
         self.population_slider = Slider(min=50, max=300, step=10, value=self.population_size)
         self.population_slider.bind(value=self.on_population_changed)
         session_layout.add_widget(self.population_slider)
+
+        self.btn_reset_settings = Button(text='RESTABLECER POR DEFECTO', size_hint_y=None, height=34 if compact else 38, font_size='11sp' if compact else '12sp')
+        _retro_button(self.btn_reset_settings, YELLOW)
+        self.btn_reset_settings.bind(on_press=self.reset_training_settings)
+        session_layout.add_widget(self.btn_reset_settings)
 
         layout.add_widget(session_layout)
         
@@ -365,6 +405,18 @@ class TrainingScreen(Screen):
         self.population_size = int(value)
         self.lbl_population_setting.text = f'POBLACIÓN: {self.population_size}'
         _save_training_session_settings(self.total_generations, self.population_size)
+
+    def reset_training_settings(self, instance):
+        self.generations_slider.value = DEFAULT_TRAINING_GENERATIONS
+        self.population_slider.value = DEFAULT_TRAINING_POPULATION
+        self.total_generations = DEFAULT_TRAINING_GENERATIONS
+        self.population_size = DEFAULT_TRAINING_POPULATION
+        self.lbl_generation_setting.text = f'GENS: {self.total_generations}'
+        self.lbl_population_setting.text = f'POBLACIÓN: {self.population_size}'
+        self.lbl_generation.text = f'GENERACIÓN: 0 / {self.total_generations}'
+        self.progress_bar.max = self.total_generations
+        self.progress_bar.value = 0
+        _save_training_session_settings(self.total_generations, self.population_size)
     
     def start_training(self, instance):
         if not self.is_training:
@@ -394,7 +446,7 @@ class TrainingScreen(Screen):
                 mutation_sigma=0.1,
                 crossover_prob=0.7,
                 tournament_size=3,
-                grid_size=20
+                grid_size=self.grid_size
             )
             
             # Función callback para actualizar UI
@@ -467,10 +519,11 @@ class GameScreen(Screen):
         self.game_thread = None
         self.is_running = False
         self.current_game = None
-        self.game_speed = 0.1  # segundos por step
+        self.game_speed = DEFAULT_GAME_SPEED  # segundos por step
         self.selected_champion_generation = None  # Generación del campeón seleccionado
         self._champion_labels = {}
         self.total_generations = TRAINING_GENERATIONS
+        self.grid_size = GAME_GRID_SIZE
         
         compact = _is_compact_layout()
         layout = BoxLayout(orientation='vertical', padding=8 if compact else 10, spacing=8 if compact else 10)
@@ -488,7 +541,8 @@ class GameScreen(Screen):
             values=(_session_generation_label(self.total_generations),),
             size_hint_x=0.7
         )
-        self.champion_spinner.font_name = RETRO_FONT
+        if RESOLVED_RETRO_FONT:
+            self.champion_spinner.font_name = RESOLVED_RETRO_FONT
         _retro_button(self.champion_spinner, YELLOW)
         self.champion_spinner.bind(text=self.on_champion_selected)
         spinner_layout.add_widget(self.champion_spinner)
@@ -504,16 +558,24 @@ class GameScreen(Screen):
         # Información del juego
         info_layout = GridLayout(cols=2 if compact else 4, spacing=8 if compact else 10, size_hint_y=None, height=76 if compact else 36)
         
-        self.lbl_food = Label(text='COMIDA: 0', font_size='11sp' if compact else '12sp', color=GREEN, font_name=RETRO_FONT)
+        self.lbl_food = Label(text='COMIDA: 0', font_size='11sp' if compact else '12sp', color=GREEN)
+        if RESOLVED_RETRO_FONT:
+            self.lbl_food.font_name = RESOLVED_RETRO_FONT
         info_layout.add_widget(self.lbl_food)
         
-        self.lbl_steps = Label(text='PASOS: 0', font_size='11sp' if compact else '12sp', color=BLUE, font_name=RETRO_FONT)
+        self.lbl_steps = Label(text='PASOS: 0', font_size='11sp' if compact else '12sp', color=BLUE)
+        if RESOLVED_RETRO_FONT:
+            self.lbl_steps.font_name = RESOLVED_RETRO_FONT
         info_layout.add_widget(self.lbl_steps)
         
-        self.lbl_energy = Label(text='ENERGÍA: 200', font_size='11sp' if compact else '12sp', color=YELLOW, font_name=RETRO_FONT)
+        self.lbl_energy = Label(text='ENERGÍA: 200', font_size='11sp' if compact else '12sp', color=YELLOW)
+        if RESOLVED_RETRO_FONT:
+            self.lbl_energy.font_name = RESOLVED_RETRO_FONT
         info_layout.add_widget(self.lbl_energy)
         
-        self.lbl_fitness = Label(text='FITNESS: 0', font_size='11sp' if compact else '12sp', color=TEXT, font_name=RETRO_FONT)
+        self.lbl_fitness = Label(text='FITNESS: 0', font_size='11sp' if compact else '12sp', color=TEXT)
+        if RESOLVED_RETRO_FONT:
+            self.lbl_fitness.font_name = RESOLVED_RETRO_FONT
         info_layout.add_widget(self.lbl_fitness)
         
         layout.add_widget(info_layout)
@@ -579,7 +641,7 @@ class GameScreen(Screen):
     def reset_game(self, instance):
         """Reinicia el juego."""
         self.is_running = False
-        self.current_game = SnakeGame(grid_size=20)
+        self.current_game = SnakeGame(grid_size=self.grid_size)
         self.update_display()
     
     def toggle_play(self, instance):
@@ -710,8 +772,9 @@ class ResultsScreen(Screen):
             height=40 if compact else 44,
             font_size='16sp' if compact else '18sp',
             color=TEXT,
-            font_name=RETRO_FONT
         )
+        if RESOLVED_RETRO_FONT:
+            title.font_name = RESOLVED_RETRO_FONT
         layout.add_widget(title)
         
         # Gráfica de resumen usando Canvas

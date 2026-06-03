@@ -35,6 +35,7 @@ Pillow
 ```
 
 Para cada paquete:
+
 - Escribe el nombre
 - Toca "Search"
 - Toca "Install"
@@ -61,6 +62,7 @@ pip install Pillow
 4. Coloca los archivos en: `/sdcard/Pydroid3/Proyectos/EvoSnake/` o similar
 
 Archivos necesarios:
+
 ```
 main.py
 snake_game.py
@@ -86,6 +88,14 @@ config.py
 
 ## Notas Importantes para Pydroid 3
 
+La app detecta Android/Pydroid automáticamente y activa un perfil más liviano:
+
+- `grid_size` más pequeño
+- menos generaciones y población por defecto
+- velocidad de juego más lenta
+
+Si ya tienes una sesión guardada desde PC y quieres volver al perfil móvil, usa el botón **RESTABLECER POR DEFECTO** en la pantalla de entrenamiento.
+
 ### ⚠️ Limitaciones Conocidas
 
 1. **Matplotlib puede no visualizarse correctamente**
@@ -93,67 +103,58 @@ config.py
    - Solución: Se puede descomentar `# import matplotlib.pyplot as plt` si causa problemas
 
 2. **El entrenamiento es lento**
-   - Pydroid 3 ejecuta Python en la JVM, es más lento que Python nativo
-   - Reduce el tamaño de población o generaciones si es muy lento
-   - En `main.py`, en `TrainingScreen.run_training()`, modifica:
-     ```python
-     population_size=20,  # Reduce de 50 a 20
-     generations=15,      # Reduce de 30 a 15
-     ```
+   - Pydroid 3 ejecuta Python en Android y suele ser más lento que en PC
+   - La app ya arranca con un perfil reducido en móvil
+   - Si hace falta, baja todavía más la población y las generaciones desde la interfaz de entrenamiento
 
 3. **La visualización del juego puede ser lenta**
-   - En `main.py`, en `GameScreen`, aumenta `game_speed`:
-     ```python
-     self.game_speed = 0.2  # Aumenta de 0.1 a 0.2 o 0.3
-     ```
+   - En móvil el juego ya usa una velocidad más lenta por defecto
+   - Si necesitas más fluidez, puedes subir la velocidad en el código o bajar el tamaño del grid
 
 4. **Memoria limitada**
    - Pydroid 3 puede tener límites de memoria
-   - Reduce `grid_size` a 15 en lugar de 20 si hay problemas
-   - En `genetic_algo.py`, modifica:
-     ```python
-     grid_size=15  # Reduce de 20 a 15
-     ```
+   - El modo móvil ya usa `grid_size=15` por defecto
+   - Si aún tienes problemas, reduce población y generaciones desde la interfaz
 
 ### 📱 Ajustes Recomendados para Pydroid 3
 
-En `config.py`, ajusta:
+En `config.py`, ajusta solo si quieres forzarlo manualmente:
 
 ```python
 PYDROID_CONFIG = {
-    'is_pydroid': True,             # Cambiar a True
-    'use_kivy_garden': True,        # Usar addons de Kivy
-    'game_speed_pydroid': 0.2,      # Velocidad más lenta
+   'is_pydroid': True,                 # Forzar perfil móvil
+   'use_kivy_garden': True,
+   'game_speed_pydroid': 0.2,
+   'grid_size_pydroid': 15,
+   'training_generations_pydroid': 15,
+   'training_population_size_pydroid': 20,
 }
 ```
 
-En `genetic_algo.py`, para Pydroid:
-
-```python
-ga = SnakeGeneticAlgorithm(
-    population_size=20,   # En lugar de 50
-    generations=15,       # En lugar de 30
-    grid_size=15          # En lugar de 20
-)
-```
+En `main.py`, para Pydroid el algoritmo se lanza con valores livianos por defecto, así que normalmente no necesitas tocar `genetic_algo.py`. Si quieres probar una versión más agresiva o más lenta, ajusta desde la UI.
 
 ## Troubleshooting
 
 ### Error: "ModuleNotFoundError: No module named 'kivy'"
+
 - Solución: Instala nuevamente con `pip install kivy`
 
 ### Error: "ModuleNotFoundError: No module named 'deap'"
+
 - Solución: Instala con `pip install deap`
 
 ### La app se congela al entrenar
+
 - Solución: Reduce el tamaño de población y generaciones
 - O aumenta `game_speed` en `GameScreen`
 
 ### Las gráficas no aparecen
+
 - Solución temporal: Comenta el import de matplotlib si causa problemas
 - Alternativa: Usa ASCII art o simple texto para mostrar estadísticas
 
 ### Error de permisos en archivos
+
 - Solución: En Pydroid 3, usa `/sdcard/` en lugar de directorios del sistema
 
 ## Optimización para Pydroid 3
