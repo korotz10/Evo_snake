@@ -21,7 +21,7 @@ NEURAL_NETWORK_CONFIG = {
 # ==================== Configuración del Algoritmo Genético ====================
 GA_CONFIG = {
     'population_size': 100,         # Tamaño de la población (más diversidad)
-    'generations': 50,              # Máximo de generaciones (más tiempo para aprender)
+    'generations': 100,             # Máximo de generaciones (más tiempo para aprender)
     'tournament_size': 3,           # Tamaño del torneo para selección
     'crossover_prob': 0.8,          # Probabilidad de cruce (80% - más cruces)
     'mutation_prob': 0.3,           # Probabilidad de mutación por individuo

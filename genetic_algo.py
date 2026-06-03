@@ -210,6 +210,8 @@ class SnakeGeneticAlgorithm:
         self.champions = {}
         
         for gen in range(self.generations):
+            display_gen = gen + 1
+
             # Obtener estadísticas de la generación actual
             fits = [ind.fitness.values[0] for ind in population]
             best_fit = max(fits)
@@ -220,14 +222,14 @@ class SnakeGeneticAlgorithm:
                 self.best_fitness = best_fit
                 self.best_individual = max(population, key=lambda x: x.fitness.values[0])
             
-            # Guardar campeón cada 10 generaciones (hasta generación 100)
-            if gen % 10 == 0 and gen <= 100:
-                self.champions[gen] = self.toolbox.clone(
+            # Guardar campeón cada 10 generaciones y también en la última
+            if display_gen % 10 == 0 or display_gen == self.generations:
+                self.champions[display_gen] = self.toolbox.clone(
                     max(population, key=lambda x: x.fitness.values[0])
                 )
             
             self.history.append({
-                'generation': gen,
+                'generation': display_gen,
                 'best_fitness': best_fit,
                 'mean_fitness': mean_fit,
                 'min_fitness': min(fits),
@@ -236,7 +238,7 @@ class SnakeGeneticAlgorithm:
             
             # Llamar callback si existe
             if callback:
-                callback(gen, best_fit, {
+                callback(display_gen, best_fit, {
                     'mean': mean_fit,
                     'min': min(fits),
                     'max': max(fits)
@@ -289,10 +291,10 @@ class SnakeGeneticAlgorithm:
         """
         Retorna el campeón (mejor individuo) de una generación guardada.
         
-        Los campeones se guardan cada 10 generaciones (0, 10, 20, ..., 50).
+        Los campeones se guardan cada 10 generaciones (10, 20, 30, ..., N).
         
         Args:
-            generation: número de generación (debe ser múltiplo de 10)
+            generation: número de generación humana (debe ser múltiplo de 10)
         
         Returns:
             NeuralNetwork: red neuronal del campeón, o None si no existe

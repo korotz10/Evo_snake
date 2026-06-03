@@ -42,12 +42,12 @@ class FitnessCanvasWidget(Widget):
         super().__init__(**kwargs)
         self.history = []
         self.padding_x = 60  # Espacio para eje Y
-        self.padding_y = 60  # Espacio para eje X
-        self.margin = 20     # Margen general
+        self.padding_y = 56  # Espacio para eje X
+        self.margin = 16     # Margen general
         self.grid_lines = 5  # Número de líneas de grid
         
         # Bind canvas update
-        self.bind(size=self.update_canvas)
+        self.bind(pos=self.update_canvas, size=self.update_canvas)
     
     def update(self, history):
         """
@@ -61,7 +61,18 @@ class FitnessCanvasWidget(Widget):
     
     def update_canvas(self, *args):
         """Redibuja el canvas con la gráfica actualizada."""
-        self.canvas.clear()
+        canvas = self.canvas
+        if canvas is None:
+            return
+
+        canvas.clear()
+
+        width = max(self.width, 1)
+        height = max(self.height, 1)
+        self.padding_x = max(42, min(90, int(width * 0.16)))
+        self.padding_y = max(42, min(84, int(height * 0.16)))
+        self.margin = max(10, min(24, int(min(width, height) * 0.04)))
+        self.grid_lines = 4 if min(width, height) < 520 else 5
         
         if not self.history or len(self.history) < 2:
             self._draw_empty_state()
@@ -72,6 +83,10 @@ class FitnessCanvasWidget(Widget):
         plot_height = self.height - self.padding_y - self.margin
         plot_x = self.margin + self.padding_x
         plot_y = self.margin
+
+        if plot_width <= 20 or plot_height <= 20:
+            self._draw_empty_state()
+            return
         
         # Extraer datos
         generations = [h['generation'] for h in self.history]
@@ -86,7 +101,7 @@ class FitnessCanvasWidget(Widget):
         max_gen = max(generations) if generations else 1
         
         # Dibujar fondo
-        with self.canvas:
+        with canvas:
             # Fondo oscuro
             Color(*BACKGROUND, 1)
             Rectangle(pos=(plot_x, plot_y), size=(plot_width, plot_height))
@@ -111,13 +126,21 @@ class FitnessCanvasWidget(Widget):
     
     def _draw_empty_state(self):
         """Dibuja un estado vacío cuando no hay datos."""
-        with self.canvas:
+        canvas = self.canvas
+        if canvas is None:
+            return
+
+        with canvas:
             Color(*BACKGROUND, 1)
             Rectangle(pos=(0, 0), size=self.size)
     
     def _draw_grid(self, x, y, width, height, max_gen, max_fit, min_fit):
         """Dibuja el grid de referencia."""
-        with self.canvas:
+        canvas = self.canvas
+        if canvas is None:
+            return
+
+        with canvas:
             Color(*GRID, 0.28)
             
             # Líneas verticales (generaciones)
@@ -135,6 +158,10 @@ class FitnessCanvasWidget(Widget):
         """Dibuja las líneas de fitness (mejor y promedio)."""
         if not gens or len(gens) < 2:
             return
+
+        canvas = self.canvas
+        if canvas is None:
+            return
         
         range_fit = max_fit - min_fit if max_fit > min_fit else 1
         
@@ -146,7 +173,7 @@ class FitnessCanvasWidget(Widget):
             best_points.extend([gen_x, fit_y])
         
         if len(best_points) >= 4:
-            with self.canvas:
+            with canvas:
                 Color(*GREEN, 0.95)  # Verde arcade
                 Line(points=best_points, width=2)
         
@@ -158,13 +185,17 @@ class FitnessCanvasWidget(Widget):
             mean_points.extend([gen_x, fit_y])
         
         if len(mean_points) >= 4:
-            with self.canvas:
+            with canvas:
                 Color(*BLUE, 0.85)  # Azul arcade
                 Line(points=mean_points, width=1, dash_length=4, dash_offset=2)
     
     def _draw_axes(self, x, y, width, height, max_gen, max_fit, min_fit):
         """Dibuja los ejes X e Y."""
-        with self.canvas:
+        canvas = self.canvas
+        if canvas is None:
+            return
+
+        with canvas:
             Color(1.0, 0.9, 0.2, 1)
             
             # Eje X (horizontal)
@@ -184,9 +215,9 @@ class FitnessCanvasWidget(Widget):
         gen_label = Label(
             text=f'Gen: {int(current_gen)}',
             size_hint=(None, None),
-            size=(80, 30),
+            size=(90, 30),
             pos=(x + width - 100, y - 40),
-            font_size='12sp',
+            font_size='11sp',
             color=TEXT,
             font_name=RETRO_FONT
         )
@@ -196,9 +227,9 @@ class FitnessCanvasWidget(Widget):
         fit_label = Label(
             text=f'Best: {int(current_fitness)}',
             size_hint=(None, None),
-            size=(100, 30),
+            size=(110, 30),
             pos=(x + width - 120, y + height + 10),
-            font_size='12sp',
+            font_size='11sp',
             color=YELLOW + (1,) if len(YELLOW) == 3 else YELLOW,
             font_name=RETRO_FONT
         )

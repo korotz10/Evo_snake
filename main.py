@@ -6,7 +6,10 @@ Nuevo: FitnessCanvasWidget (sin matplotlib), Slider de velocidad, Spinner de cam
 
 import threading
 import time
+import json
 import numpy as np
+from typing import cast
+from pathlib import Path
 from kivy.app import App
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.boxlayout import BoxLayout
@@ -41,6 +44,49 @@ BLUE = tuple(UI_THEME['retro_blue'])
 YELLOW = tuple(UI_THEME['retro_yellow'])
 TEXT = tuple(UI_THEME['retro_text'])
 RETRO_FONT = r'C:\Windows\Fonts\cour.ttf'
+TRAINING_GENERATIONS = get_config('ga').get('generations', 100)
+TRAINING_POPULATION = get_config('ga').get('population_size', 100)
+SESSION_SETTINGS_FILE = Path(__file__).with_name('training_session_settings.json')
+
+
+def _is_compact_layout():
+    return min(Window.size) < 720
+
+
+def _session_generation_label(total_generations):
+    return f'MEJOR (GEN {total_generations})'
+
+
+def _load_training_session_settings():
+    defaults = {
+        'generations': TRAINING_GENERATIONS,
+        'population_size': TRAINING_POPULATION,
+    }
+
+    try:
+        if SESSION_SETTINGS_FILE.exists():
+            data = json.loads(SESSION_SETTINGS_FILE.read_text(encoding='utf-8'))
+            if isinstance(data, dict):
+                defaults['generations'] = int(data.get('generations', defaults['generations']))
+                defaults['population_size'] = int(data.get('population_size', defaults['population_size']))
+    except Exception:
+        pass
+
+    defaults['generations'] = max(10, min(200, defaults['generations']))
+    defaults['population_size'] = max(50, min(300, defaults['population_size']))
+    return defaults
+
+
+def _save_training_session_settings(generations, population_size):
+    payload = {
+        'generations': int(generations),
+        'population_size': int(population_size),
+    }
+
+    try:
+        SESSION_SETTINGS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception:
+        pass
 
 
 def _retro_panel(widget, fill_color=PANEL_BG, border_color=BORDER, border_width=1.6):
@@ -107,15 +153,16 @@ class MenuScreen(Screen):
         self.name = 'menu'
         _retro_panel(self, WINDOW_BG, BORDER, 2)
         
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=20)
+        compact = _is_compact_layout()
+        layout = BoxLayout(orientation='vertical', padding=14 if compact else 20, spacing=14 if compact else 20)
         _retro_panel(layout, PANEL_BG, BORDER, 2)
-        _retro_scanlines(layout, spacing=5, alpha=0.05)
+        _retro_scanlines(layout, spacing=4 if compact else 5, alpha=0.05)
         
         # Título
         title = Label(
             text='[color=ffdd33][b]EVOSNAKE[/b][/color]\n[color=6be6ff][size=14]IA QUE APRENDE A JUGAR SNAKE[/size][/color]',
             markup=True,
-            size_hint_y=0.3,
+            size_hint_y=0.28 if compact else 0.3,
             color=TEXT,
             font_name=RETRO_FONT
         )
@@ -125,13 +172,13 @@ class MenuScreen(Screen):
         layout.add_widget(Label())
         
         # Botones
-        btn_layout = GridLayout(cols=1, spacing=15, size_hint_y=0.4)
+        btn_layout = GridLayout(cols=1, spacing=12 if compact else 15, size_hint_y=0.4)
         
         btn_train = Button(
             text='ENTRENAR IA',
             size_hint_y=None,
-            height=70,
-            font_size='18sp'
+            height=62 if compact else 70,
+            font_size='16sp' if compact else '18sp'
         )
         _retro_button(btn_train, GREEN)
         btn_train.bind(on_press=self.go_to_training)
@@ -140,8 +187,8 @@ class MenuScreen(Screen):
         btn_play = Button(
             text='VER MEJOR SNAKE',
             size_hint_y=None,
-            height=70,
-            font_size='18sp'
+            height=62 if compact else 70,
+            font_size='16sp' if compact else '18sp'
         )
         _retro_button(btn_play, YELLOW)
         btn_play.bind(on_press=self.go_to_game)
@@ -157,7 +204,7 @@ class MenuScreen(Screen):
     
     def go_to_game(self, instance):
         # Si no hay modelo entrenado, mostrar popup
-        app = App.get_running_app()
+        app = cast(EvoSnakeApp, App.get_running_app())
         if app.best_network is None:
             popup = Popup(
                 title='SIN MODELO',
@@ -179,17 +226,32 @@ class TrainingScreen(Screen):
         self.training_thread = None
         self.is_training = False
         self.training_speed_delay = 0.0  # Segundos de espera entre generaciones
+        session_settings = _load_training_session_settings()
+        self.total_generations = session_settings['generations']
+        self.population_size = session_settings['population_size']
         
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         _retro_panel(self, WINDOW_BG, BORDER, 2)
+        compact = _is_compact_layout()
+
+        scroll = ScrollView(do_scroll_x=False, bar_width=6)
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10, size_hint_y=None)
+        layout.bind(minimum_height=layout.setter('height'))
+        layout.height = max(Window.height * 1.18, 760)
         _retro_panel(layout, PANEL_BG, BORDER, 2)
         _retro_scanlines(layout, spacing=4, alpha=0.05)
+
+        def sync_layout_height(*args):
+            layout.height = max(Window.height * 1.18, 760)
+
+        Window.bind(size=sync_layout_height)
+        sync_layout_height()
         
         # Información
         self.lbl_generation = Label(
-            text='GENERACIÓN: 0',
-            size_hint_y=0.08,
-            font_size='16sp',
+            text=f'GENERACIÓN: 0 / {self.total_generations}',
+            size_hint_y=None,
+            height=40 if compact else 44,
+            font_size='15sp' if compact else '16sp',
             bold=True,
             color=GREEN,
             font_name=RETRO_FONT
@@ -198,8 +260,9 @@ class TrainingScreen(Screen):
         
         self.lbl_fitness = Label(
             text='MEJOR FITNESS: 0',
-            size_hint_y=0.08,
-            font_size='14sp',
+            size_hint_y=None,
+            height=34 if compact else 38,
+            font_size='13sp' if compact else '14sp',
             color=YELLOW,
             font_name=RETRO_FONT
         )
@@ -207,14 +270,15 @@ class TrainingScreen(Screen):
         
         # Barra de progreso
         self.progress_bar = ProgressBar(
-            max=50,
+            max=self.total_generations,
             value=0,
-            size_hint_y=0.08
+            size_hint_y=None,
+            height=20
         )
         layout.add_widget(self.progress_bar)
         
         # Control de velocidad del entrenamiento
-        speed_layout = BoxLayout(orientation='horizontal', size_hint_y=0.08, spacing=10)
+        speed_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=44 if compact else 48, spacing=10)
         _retro_panel(speed_layout, PANEL_BG_ALT, BORDER, 1.2)
         speed_layout.add_widget(_retro_label(Label(text='VELOCIDAD:', size_hint_x=0.15), BLUE, True))
         
@@ -222,42 +286,95 @@ class TrainingScreen(Screen):
         self.speed_slider.bind(value=self.on_speed_changed)
         speed_layout.add_widget(self.speed_slider)
         
-        self.lbl_speed = Label(text='0.0S', size_hint_x=0.2, font_size='12sp', color=YELLOW)
+        self.lbl_speed = Label(text='0.0S', size_hint_x=0.2, font_size='11sp' if compact else '12sp', color=YELLOW)
         self.lbl_speed.font_name = RETRO_FONT
         speed_layout.add_widget(self.lbl_speed)
         
         layout.add_widget(speed_layout)
+
+        # Configuración de la sesión
+        session_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=132 if compact else 152, spacing=8 if compact else 10)
+        _retro_panel(session_layout, PANEL_BG_ALT, BORDER, 1.2)
+
+        self.lbl_generation_setting = Label(
+            text=f'GENS: {self.total_generations}',
+            size_hint_y=None,
+            height=24,
+            font_size='11sp' if compact else '12sp',
+            color=GREEN,
+            font_name=RETRO_FONT
+        )
+        session_layout.add_widget(self.lbl_generation_setting)
+
+        self.generations_slider = Slider(min=10, max=200, step=10, value=self.total_generations)
+        self.generations_slider.bind(value=self.on_generations_changed)
+        session_layout.add_widget(self.generations_slider)
+
+        self.lbl_population_setting = Label(
+            text=f'POBLACIÓN: {self.population_size}',
+            size_hint_y=None,
+            height=24,
+            font_size='11sp' if compact else '12sp',
+            color=GREEN,
+            font_name=RETRO_FONT
+        )
+        session_layout.add_widget(self.lbl_population_setting)
+
+        self.population_slider = Slider(min=50, max=300, step=10, value=self.population_size)
+        self.population_slider.bind(value=self.on_population_changed)
+        session_layout.add_widget(self.population_slider)
+
+        layout.add_widget(session_layout)
         
         # Gráfica de fitness (usando Canvas nativo)
-        self.fitness_canvas = FitnessCanvasWidget(size_hint_y=0.55)
+        self.fitness_canvas = FitnessCanvasWidget(size_hint_y=None, height=max(360, int(Window.height * 0.48)))
         layout.add_widget(self.fitness_canvas)
         
         # Botones
-        btn_layout = GridLayout(cols=2, spacing=10, size_hint_y=0.08)
+        btn_layout = GridLayout(cols=2, spacing=8 if compact else 10, size_hint_y=None, height=52 if compact else 58)
         _retro_panel(btn_layout, PANEL_BG_ALT, BORDER, 1.4)
         
-        self.btn_start = Button(text='INICIAR ENTRENAMIENTO', font_size='14sp')
+        self.btn_start = Button(text='INICIAR ENTRENAMIENTO', font_size='13sp' if compact else '14sp')
         _retro_button(self.btn_start, GREEN)
         self.btn_start.bind(on_press=self.start_training)
         btn_layout.add_widget(self.btn_start)
         
-        btn_back = Button(text='VOLVER', font_size='14sp')
+        btn_back = Button(text='VOLVER', font_size='13sp' if compact else '14sp')
         _retro_button(btn_back, YELLOW)
         btn_back.bind(on_press=self.go_to_menu)
         btn_layout.add_widget(btn_back)
         
         layout.add_widget(btn_layout)
         
-        self.add_widget(layout)
+        scroll.add_widget(layout)
+        self.add_widget(scroll)
     
     def on_speed_changed(self, instance, value):
         """Actualiza la etiqueta de velocidad cuando cambia el slider."""
         self.training_speed_delay = value
         self.lbl_speed.text = f'{value:.2f}s'
+
+    def on_generations_changed(self, instance, value):
+        self.total_generations = int(value)
+        self.lbl_generation_setting.text = f'GENS: {self.total_generations}'
+        self.lbl_generation.text = f'GENERACIÓN: 0 / {self.total_generations}'
+        self.progress_bar.max = self.total_generations
+        _save_training_session_settings(self.total_generations, self.population_size)
+
+    def on_population_changed(self, instance, value):
+        self.population_size = int(value)
+        self.lbl_population_setting.text = f'POBLACIÓN: {self.population_size}'
+        _save_training_session_settings(self.total_generations, self.population_size)
     
     def start_training(self, instance):
         if not self.is_training:
             self.is_training = True
+            self.total_generations = int(self.generations_slider.value)
+            self.population_size = int(self.population_slider.value)
+            _save_training_session_settings(self.total_generations, self.population_size)
+            self.progress_bar.max = self.total_generations
+            self.progress_bar.value = 0
+            self.lbl_generation.text = f'GENERACIÓN: 0 / {self.total_generations}'
             self.btn_start.disabled = True
             self.btn_start.text = 'Entrenando...'
             
@@ -269,10 +386,10 @@ class TrainingScreen(Screen):
     def run_training(self):
         """Ejecuta el algoritmo genético en un thread separado."""
         try:
-            app = App.get_running_app()
+            app = cast(EvoSnakeApp, App.get_running_app())
             ga = SnakeGeneticAlgorithm(
-                population_size=150,
-                generations=100,
+                population_size=self.population_size,
+                generations=self.total_generations,
                 mutation_prob=0.2,
                 mutation_sigma=0.1,
                 crossover_prob=0.7,
@@ -297,6 +414,7 @@ class TrainingScreen(Screen):
             # Guardar mejor red y campeones
             app.best_network = ga.get_best_network()
             app.training_history = history
+            app.training_generations = ga.generations
             app.champions = ga.champions  # Guardar dict de campeones
             
             # Mostrar notificación
@@ -317,10 +435,9 @@ class TrainingScreen(Screen):
     
     def update_progress(self, generation, best_fitness, history):
         """Actualiza la UI con el progreso actual."""
-        self.lbl_generation.text = f'Generación: {generation + 1}/50'
-        self.lbl_generation.text = f'GENERACIÓN: {generation + 1}/50'
+        self.lbl_generation.text = f'GENERACIÓN: {generation} / {self.total_generations}'
         self.lbl_fitness.text = f'MEJOR FITNESS: {best_fitness:.0f}'
-        self.progress_bar.value = generation + 1
+        self.progress_bar.value = generation
         
         # Actualizar gráfica con el nuevo historial
         self.fitness_canvas.update(history)
@@ -352,20 +469,23 @@ class GameScreen(Screen):
         self.current_game = None
         self.game_speed = 0.1  # segundos por step
         self.selected_champion_generation = None  # Generación del campeón seleccionado
+        self._champion_labels = {}
+        self.total_generations = TRAINING_GENERATIONS
         
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        compact = _is_compact_layout()
+        layout = BoxLayout(orientation='vertical', padding=8 if compact else 10, spacing=8 if compact else 10)
         _retro_panel(self, WINDOW_BG, BORDER, 2)
         _retro_panel(layout, PANEL_BG, BORDER, 2)
         _retro_scanlines(layout, spacing=4, alpha=0.05)
         
         # Selector de campeones (Spinner)
-        spinner_layout = BoxLayout(orientation='horizontal', size_hint_y=0.08, spacing=10)
+        spinner_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=48 if compact else 54, spacing=8 if compact else 10)
         _retro_panel(spinner_layout, PANEL_BG_ALT, BORDER, 1.2)
-        spinner_layout.add_widget(_retro_label(Label(text='SELECCIONA CAMPEÓN:', size_hint_x=0.3), BLUE, True))
+        spinner_layout.add_widget(_retro_label(Label(text='SELECCIONA CAMPEÓN:', size_hint_x=0.3, font_size='11sp' if compact else '12sp'), BLUE, True))
         
         self.champion_spinner = Spinner(
-            text='MEJOR (GEN 50)',
-            values=('MEJOR (GEN 50)', 'GEN 0', 'GEN 10', 'GEN 20', 'GEN 30', 'GEN 40'),
+            text=_session_generation_label(self.total_generations),
+            values=(_session_generation_label(self.total_generations),),
             size_hint_x=0.7
         )
         self.champion_spinner.font_name = RETRO_FONT
@@ -376,40 +496,42 @@ class GameScreen(Screen):
         layout.add_widget(spinner_layout)
         
         # Canvas del juego
-        self.game_canvas = Image(size_hint_y=0.75)
+        self.game_canvas = Image(size_hint_y=0.8 if compact else 0.76)
+        self.game_canvas.allow_stretch = True
+        self.game_canvas.keep_ratio = True
         layout.add_widget(self.game_canvas)
         
         # Información del juego
-        info_layout = GridLayout(cols=4, spacing=10, size_hint_y=0.08)
+        info_layout = GridLayout(cols=2 if compact else 4, spacing=8 if compact else 10, size_hint_y=None, height=76 if compact else 36)
         
-        self.lbl_food = Label(text='COMIDA: 0', font_size='12sp', color=GREEN, font_name=RETRO_FONT)
+        self.lbl_food = Label(text='COMIDA: 0', font_size='11sp' if compact else '12sp', color=GREEN, font_name=RETRO_FONT)
         info_layout.add_widget(self.lbl_food)
         
-        self.lbl_steps = Label(text='PASOS: 0', font_size='12sp', color=BLUE, font_name=RETRO_FONT)
+        self.lbl_steps = Label(text='PASOS: 0', font_size='11sp' if compact else '12sp', color=BLUE, font_name=RETRO_FONT)
         info_layout.add_widget(self.lbl_steps)
         
-        self.lbl_energy = Label(text='ENERGÍA: 200', font_size='12sp', color=YELLOW, font_name=RETRO_FONT)
+        self.lbl_energy = Label(text='ENERGÍA: 200', font_size='11sp' if compact else '12sp', color=YELLOW, font_name=RETRO_FONT)
         info_layout.add_widget(self.lbl_energy)
         
-        self.lbl_fitness = Label(text='FITNESS: 0', font_size='12sp', color=TEXT, font_name=RETRO_FONT)
+        self.lbl_fitness = Label(text='FITNESS: 0', font_size='11sp' if compact else '12sp', color=TEXT, font_name=RETRO_FONT)
         info_layout.add_widget(self.lbl_fitness)
         
         layout.add_widget(info_layout)
         
         # Botones
-        btn_layout = GridLayout(cols=3, spacing=10, size_hint_y=0.08)
+        btn_layout = GridLayout(cols=3, spacing=8 if compact else 10, size_hint_y=None, height=50 if compact else 54)
         
-        self.btn_play = Button(text='PLAY', font_size='12sp')
+        self.btn_play = Button(text='PLAY', font_size='11sp' if compact else '12sp')
         _retro_button(self.btn_play, GREEN)
         self.btn_play.bind(on_press=self.toggle_play)
         btn_layout.add_widget(self.btn_play)
         
-        btn_reset = Button(text='RESET', font_size='12sp')
+        btn_reset = Button(text='RESET', font_size='11sp' if compact else '12sp')
         _retro_button(btn_reset, BLUE)
         btn_reset.bind(on_press=self.reset_game)
         btn_layout.add_widget(btn_reset)
         
-        btn_back = Button(text='VOLVER', font_size='12sp')
+        btn_back = Button(text='VOLVER', font_size='11sp' if compact else '12sp')
         _retro_button(btn_back, YELLOW)
         btn_back.bind(on_press=self.go_to_menu)
         btn_layout.add_widget(btn_back)
@@ -420,35 +542,36 @@ class GameScreen(Screen):
     
     def on_champion_selected(self, spinner, text):
         """Se llama cuando se selecciona un campeón del spinner."""
-        # Mapear texto del spinner a generación
-        generation_map = {
-            'MEJOR (GEN 50)': None,  # Mejor del entrenamiento
-            'GEN 0': 0,
-            'GEN 10': 10,
-            'GEN 20': 20,
-            'GEN 30': 30,
-            'GEN 40': 40
-        }
-        self.selected_champion_generation = generation_map.get(text)
+        self.selected_champion_generation = self._champion_labels.get(text)
         
         # Reiniciar el juego con el nuevo campeón
         if not self.is_running:
             self.reset_game(None)
+
+    def _refresh_champion_spinner(self):
+        app = cast(EvoSnakeApp, App.get_running_app())
+        default_label = _session_generation_label(getattr(app, 'training_generations', self.total_generations))
+        spinner_options = [default_label]
+        label_map: dict[str, int | None] = {default_label: None}
+
+        if app.champions:
+            champion_generations = sorted(app.champions.keys())
+            for gen in champion_generations:
+                label = f'GEN {gen}'
+                spinner_options.append(label)
+                label_map[label] = gen
+
+        self._champion_labels = label_map
+        self.champion_spinner.values = tuple(spinner_options)
+
+        if self.champion_spinner.text not in self._champion_labels:
+            self.champion_spinner.text = default_label
+        else:
+            self.selected_champion_generation = self._champion_labels.get(self.champion_spinner.text)
     
     def on_enter(self):
         """Se llama cuando la pantalla se hace visible."""
-        # Actualizar opciones del spinner si hay champions disponibles
-        app = App.get_running_app()
-        if app.champions:
-            champion_generations = sorted(app.champions.keys())
-            spinner_options = ['MEJOR (GEN 50)']
-            for gen in champion_generations:
-                if gen > 0:  # Excluir generación 0 si está
-                    spinner_options.append(f'GEN {gen}')
-            
-            # Agregar opciones del spinner
-            if len(spinner_options) > 1:
-                self.champion_spinner.values = tuple(spinner_options)
+        self._refresh_champion_spinner()
         
         self.reset_game(None)
         self.toggle_play(None)
@@ -473,7 +596,8 @@ class GameScreen(Screen):
     
     def run_game(self):
         """Ejecuta el juego en un thread separado."""
-        app = App.get_running_app()
+        app = cast(EvoSnakeApp, App.get_running_app())
+        current_game = self.current_game
         
         # Obtener la red neuronal a usar (campeón o mejor)
         if self.selected_champion_generation is not None and app.champions:
@@ -494,19 +618,23 @@ class GameScreen(Screen):
             self.is_running = False
             return
         
-        while self.is_running and not self.current_game.game_over:
+        if current_game is None:
+            self.is_running = False
+            return
+
+        while self.is_running and not current_game.game_over:
             # Obtener sensores del juego
-            sensors = self.current_game.get_sensors()
+            sensors = current_game.get_sensors()
             
             # Red neuronal predice la dirección
             output = network.predict(sensors)[0]
             
             # Convertir índice a dirección
             directions = [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT]
-            self.current_game.set_direction(directions[output])
+            current_game.set_direction(directions[output])
             
             # Step del juego
-            self.current_game.step()
+            current_game.step()
             
             # Actualizar display
             Clock.schedule_once(lambda dt: self.update_display(), 0)
@@ -523,24 +651,29 @@ class GameScreen(Screen):
     
     def update_display(self):
         """Actualiza la visualización del juego."""
-        if self.current_game:
+        current_game = self.current_game
+        if current_game is not None:
             # Actualizar información
-            self.lbl_food.text = f'COMIDA: {self.current_game.food_eaten}'
-            self.lbl_steps.text = f'PASOS: {self.current_game.steps}'
-            self.lbl_energy.text = f'ENERGÍA: {self.current_game.energy}'
-            self.lbl_fitness.text = f'FITNESS: {self.current_game.calculate_fitness():.0f}'
+            self.lbl_food.text = f'COMIDA: {current_game.food_eaten}'
+            self.lbl_steps.text = f'PASOS: {current_game.steps}'
+            self.lbl_energy.text = f'ENERGÍA: {current_game.energy}'
+            self.lbl_fitness.text = f'FITNESS: {current_game.calculate_fitness():.0f}'
             
             # Obtener frame del juego (ya incluye borde en visualizer.py)
-            frame = GameVisualizer.get_game_frame(self.current_game, cell_size=14)
+            cell_area = min(max(self.game_canvas.width, 1), max(self.game_canvas.height, 1))
+            cell_size = max(16, min(24, int(cell_area / (current_game.grid_size + 2))))
+            frame = GameVisualizer.get_game_frame(current_game, cell_size=cell_size)
             
             # Convertir a formato Kivy Image
             temp_path = GameVisualizer.save_frame_as_kivy_image(frame)
             core_image = CoreImage(temp_path)
-            core_image.texture.mag_filter = 'nearest'
-            core_image.texture.min_filter = 'nearest'
+            texture: Texture | None = core_image.texture
+            if texture is not None:
+                texture.mag_filter = 'nearest'
+                texture.min_filter = 'nearest'
             
             # Actualizar imagen en Kivy
-            self.game_canvas.texture = core_image.texture
+            self.game_canvas.texture = texture
     
     def go_to_menu(self, instance):
         self.is_running = False
@@ -554,46 +687,58 @@ class ResultsScreen(Screen):
         super().__init__(**kwargs)
         self.name = 'results'
         
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        compact = _is_compact_layout()
+        scroll = ScrollView(do_scroll_x=False, bar_width=6)
+        layout = BoxLayout(orientation='vertical', padding=14 if compact else 20, spacing=12 if compact else 15, size_hint_y=None)
+        layout.bind(minimum_height=layout.setter('height'))
+        layout.height = max(Window.height * 1.12, 720)
         _retro_panel(self, WINDOW_BG, BORDER, 2)
         _retro_panel(layout, PANEL_BG, BORDER, 2)
-        _retro_scanlines(layout, spacing=5, alpha=0.05)
+        _retro_scanlines(layout, spacing=4 if compact else 5, alpha=0.05)
+
+        def sync_layout_height(*args):
+            layout.height = max(Window.height * 1.12, 720)
+
+        Window.bind(size=sync_layout_height)
+        sync_layout_height()
         
         # Título
         title = Label(
             text='[color=ffdd33][b]RESULTADOS DEL ENTRENAMIENTO[/b][/color]',
             markup=True,
-            size_hint_y=0.1,
-            font_size='18sp',
+            size_hint_y=None,
+            height=40 if compact else 44,
+            font_size='16sp' if compact else '18sp',
             color=TEXT,
             font_name=RETRO_FONT
         )
         layout.add_widget(title)
         
         # Gráfica de resumen usando Canvas
-        self.fitness_canvas = FitnessCanvasWidget(size_hint_y=0.7)
+        self.fitness_canvas = FitnessCanvasWidget(size_hint_y=None, height=max(420, int(Window.height * 0.64)))
         layout.add_widget(self.fitness_canvas)
         
         # Botones
-        btn_layout = GridLayout(cols=2, spacing=10, size_hint_y=0.1)
+        btn_layout = GridLayout(cols=2, spacing=8 if compact else 10, size_hint_y=None, height=50 if compact else 56)
         
-        btn_menu = Button(text='MENÚ', font_size='14sp')
+        btn_menu = Button(text='MENÚ', font_size='13sp' if compact else '14sp')
         _retro_button(btn_menu, GREEN)
         btn_menu.bind(on_press=self.go_to_menu)
         btn_layout.add_widget(btn_menu)
         
-        btn_play = Button(text='JUGAR', font_size='14sp')
+        btn_play = Button(text='JUGAR', font_size='13sp' if compact else '14sp')
         _retro_button(btn_play, YELLOW)
         btn_play.bind(on_press=self.go_to_game)
         btn_layout.add_widget(btn_play)
         
         layout.add_widget(btn_layout)
         
-        self.add_widget(layout)
+        scroll.add_widget(layout)
+        self.add_widget(scroll)
     
     def on_enter(self):
         """Se llama cuando la pantalla se hace visible."""
-        app = App.get_running_app()
+        app = cast(EvoSnakeApp, App.get_running_app())
         if app.training_history:
             self.fitness_canvas.update(app.training_history)
     
@@ -609,9 +754,10 @@ class EvoSnakeApp(App):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.best_network = None
-        self.training_history = None
-        self.champions = {}  # Dict con campeones por generación
+        self.best_network: NeuralNetwork | None = None
+        self.training_history: list[dict] | None = None
+        self.training_generations: int = TRAINING_GENERATIONS
+        self.champions: dict[int, object] = {}  # Dict con campeones por generación
     
     def build(self):
         """Construye la interfaz principal."""
